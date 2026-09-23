@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from c0mr4de.agent.backends import Backend
 from c0mr4de.agent.prompts import SYSTEM_PROMPT
 from c0mr4de.tools.base import ToolRegistry
+from c0mr4de.tools.playbook import consult_knowledge
 
 
 @dataclass
@@ -28,7 +29,19 @@ class AgentLoop:
         self.log: list[StepLog] = []
 
     def run(self, task: str) -> str:
-        messages: list[dict] = [{"role": "user", "content": task}]
+        # Auto-inject relevant playbook/vault knowledge up front rather than
+        # relying on the model to remember to call consult_knowledge itself -
+        # live testing showed a 7B model will happily skip that step even when
+        # explicitly told to use it. This guarantees the grounding is present
+        # regardless of the backend's tool-use discipline.
+        knowledge = consult_knowledge(task)
+        primed_task = (
+            f"{task}\n\n"
+            f"--- Relevant knowledge auto-retrieved for this task (already consulted, no need to call "
+            f"consult_knowledge again for this exact question - call it again only if you need something "
+            f"more specific as you go) ---\n{knowledge}"
+        )
+        messages: list[dict] = [{"role": "user", "content": primed_task}]
         tool_schemas = self.tools.schemas()
 
         for step in range(1, self.max_steps + 1):

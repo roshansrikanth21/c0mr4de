@@ -54,12 +54,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest Obsidian vault + playbooks into the local vector store")
     parser.add_argument("--vault", type=Path, default=DEFAULT_OBSIDIAN_VAULT)
     parser.add_argument("--playbooks", type=Path, default=DEFAULT_PLAYBOOKS_DIR)
+    parser.add_argument(
+        "--sources",
+        type=Path,
+        nargs="*",
+        default=[],
+        help="Extra markdown source folders to ingest - drop OWASP cheat sheets, "
+        "HackTricks exports, your own writeups here and re-run to grow the knowledge base.",
+    )
     args = parser.parse_args()
 
     store = VectorStore()
     n1 = ingest_directory(store, args.vault, "obsidian")
     n2 = ingest_directory(store, args.playbooks, "playbook")
     print(f"ingested {n1} chunks from vault, {n2} chunks from playbooks")
+    for extra in args.sources:
+        n = ingest_directory(store, extra, f"source:{extra.name}")
+        print(f"ingested {n} chunks from {extra}")
     print(f"total chunks in store: {store.count()}")
 
 
