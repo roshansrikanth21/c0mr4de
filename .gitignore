@@ -1,0 +1,8 @@
+config/config.yaml
+memory_store/
+workspace/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/

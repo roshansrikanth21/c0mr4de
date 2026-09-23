@@ -1,0 +1,20 @@
+# Copy this to config.yaml and fill in your choice. config.yaml is
+# gitignored so your API keys never get committed.
+
+backend:
+  # --- Option 1: free, local, unlimited tokens, slower/weaker reasoning ---
+  type: ollama
+  model: qwen2.5-coder:7b
+  host: http://localhost:11434
+
+  # --- Option 2: Claude, best reasoning/tool-use, costs per token ---
+  # type: anthropic
+  # model: claude-sonnet-5
+  # api_key: sk-ant-...          # or set ANTHROPIC_API_KEY env var and omit this
+
+  # --- Option 3: hosted open-weight model (DeepSeek-R1, Kimi K2, Qwen3-235B, ...) ---
+  # cheaper than Anthropic per token, smaller reasoning gap than local 7B.
+  # type: openai_compatible
+  # model: deepseek-ai/DeepSeek-R1
+  # base_url: https://api.deepinfra.com/v1/openai   # or Together/Fireworks/OpenRouter/Groq
+  # api_key: ...
