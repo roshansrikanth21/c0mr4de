@@ -12,6 +12,26 @@ from c0mr4de.tools.base import ToolRegistry
 from c0mr4de.tools.playbook import consult_knowledge
 
 
+def _trim_history(messages: list[dict], keep_full: int = 4, old_cap: int = 240) -> list[dict]:
+    """Keep the request under free-tier TPM limits (Groq free = 8000 TPM) by
+    shrinking the CONTENT of older messages while keeping every message in
+    place - removing messages would break the assistant->tool_result pairing
+    the API requires. The most recent `keep_full` messages stay untouched so
+    the model still has full detail on what it's currently doing."""
+    n = len(messages)
+    if n <= keep_full:
+        return messages
+    trimmed = []
+    for i, m in enumerate(messages):
+        if i >= n - keep_full or not isinstance(m.get("content"), str) or len(m["content"]) <= old_cap:
+            trimmed.append(m)
+        else:
+            shrunk = dict(m)
+            shrunk["content"] = m["content"][:old_cap] + " ...[trimmed for context budget]"
+            trimmed.append(shrunk)
+    return trimmed
+
+
 _PLAN_SIGNALS = ("```", "let's", "we will", "we should", "next step", "step 1", "i will", "import ")
 
 
@@ -61,6 +81,7 @@ class AgentLoop:
             knowledge = consult_knowledge(task)
         except Exception as exc:  # noqa: BLE001
             knowledge = f"(knowledge base unavailable this run: {exc})"
+        knowledge = knowledge[:1400]  # cap so the first turn stays under free-tier TPM limits
         primed_task = (
             f"{task}\n\n"
             f"--- Relevant knowledge auto-retrieved for this task (already consulted, no need to call "
@@ -74,7 +95,7 @@ class AgentLoop:
         tools_used = False
 
         for step in range(1, self.max_steps + 1):
-            response = self.backend.generate(SYSTEM_PROMPT, messages, tools=tool_schemas)
+            response = self.backend.generate(SYSTEM_PROMPT, _trim_history(messages), tools=tool_schemas)
             step_log = StepLog(step=step, assistant_text=response.text)
 
             if self.verbose and response.text:
