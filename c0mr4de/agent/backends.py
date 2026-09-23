@@ -7,6 +7,7 @@ brain" architecture possible without touching the agent loop itself.
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,6 +18,31 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+
+
+def _extract_fallback_tool_call(text: str) -> "ToolCall | None":
+    """Best-effort recovery for models that write a correctly-shaped tool
+    call as plain text instead of using structured output. Looks for the
+    first {"name": ..., "arguments": {...}} object anywhere in the text."""
+    # Find candidate JSON objects by bracket-matching from each '{"name"' occurrence,
+    # since tool arguments can themselves contain nested braces.
+    for match_start in (m.start() for m in re.finditer(r'\{\s*"name"\s*:', text)):
+        depth = 0
+        for i in range(match_start, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[match_start : i + 1]
+                    try:
+                        obj = json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break
+                    if isinstance(obj, dict) and "name" in obj and "arguments" in obj:
+                        return ToolCall(id="fallback_0", name=obj["name"], arguments=obj["arguments"])
+                    break
+    return None
 
 
 @dataclass
@@ -81,13 +107,27 @@ class OllamaBackend(Backend):
 
     def generate(self, system, messages, tools=None, max_tokens=2048) -> LLMResponse:
         chat_messages = [{"role": "system", "content": system}] + messages
+        # Ollama mirrors the OpenAI tool-calling convention: each tool must be
+        # wrapped as {"type": "function", "function": {...}}, not passed flat.
+        wrapped_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "parameters": t.get("parameters", {"type": "object", "properties": {}}),
+                },
+            }
+            for t in (tools or [])
+        ]
         response = self._client.chat(
             model=self.model,
             messages=chat_messages,
-            tools=tools or [],
+            tools=wrapped_tools,
             options={"num_predict": max_tokens},
         )
         msg = response["message"]
+        content = msg.get("content", "") or ""
         tool_calls = []
         for i, tc in enumerate(msg.get("tool_calls") or []):
             fn = tc["function"]
@@ -95,8 +135,19 @@ class OllamaBackend(Backend):
             if isinstance(args, str):
                 args = json.loads(args)
             tool_calls.append(ToolCall(id=f"call_{i}", name=fn["name"], arguments=args))
+
+        # Fallback: some Ollama model tags (confirmed with qwen2.5-coder:7b) have a
+        # broken tool-calling chat template - the model produces the *correct* tool
+        # call JSON but Ollama leaves tool_calls empty and dumps it in `content` as
+        # text instead. Detect and parse that case rather than silently losing it.
+        if not tool_calls:
+            fallback = _extract_fallback_tool_call(content)
+            if fallback is not None:
+                tool_calls.append(fallback)
+                content = ""  # the "text" was really a mis-routed tool call, not a message
+
         return LLMResponse(
-            text=msg.get("content", "") or "",
+            text=content,
             tool_calls=tool_calls,
             stop_reason="tool_use" if tool_calls else "end_turn",
             usage={
@@ -104,6 +155,27 @@ class OllamaBackend(Backend):
                 "output_tokens": response.get("eval_count", 0),
             },
         )
+
+    def format_turn(self, response: LLMResponse, tool_results: list[tuple[ToolCall, str]]) -> list[dict[str, Any]]:
+        # Same OpenAI-style shape as the base implementation, except Ollama's
+        # client validates tool_calls[].function.arguments as a dict, not a
+        # JSON string - confirmed by a live pydantic ValidationError otherwise.
+        assistant_msg = {
+            "role": "assistant",
+            "content": response.text,
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": call.arguments},
+                }
+                for call, _ in tool_results
+            ],
+        }
+        tool_msgs = [
+            {"role": "tool", "tool_call_id": call.id, "content": result} for call, result in tool_results
+        ]
+        return [assistant_msg, *tool_msgs]
 
 
 class AnthropicBackend(Backend):
