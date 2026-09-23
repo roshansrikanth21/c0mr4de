@@ -18,3 +18,25 @@ backend:
   # model: deepseek-ai/DeepSeek-R1
   # base_url: https://api.deepinfra.com/v1/openai   # or Together/Fireworks/OpenRouter/Groq
   # api_key: ...
+
+  # --- Option 4: FREE rotating hybrid (recommended for free + capable + never-stops) ---
+  # Tries each member in round-robin; on rate-limit it advances to the next
+  # provider, on error it fails forward. Free capable APIs first, local 7B last
+  # as a never-fully-stops fallback. Get one free key per provider (you create
+  # the accounts): Groq -> console.groq.com, Gemini -> aistudio.google.com.
+  # Keep every member OpenAI-compatible (do NOT put the anthropic type in here).
+  # Verify current free models/limits when you set it up - they change.
+  #
+  # type: rotating
+  # chain:
+  #   - type: openai_compatible
+  #     model: llama-3.3-70b-versatile
+  #     base_url: https://api.groq.com/openai/v1
+  #     api_key: gsk_...                       # free Groq key
+  #   - type: openai_compatible
+  #     model: gemini-2.5-flash
+  #     base_url: https://generativelanguage.googleapis.com/v1beta/openai
+  #     api_key: ...                            # free Google AI Studio key
+  #   - type: ollama                            # last resort - never fully stops
+  #     model: qwen2.5-coder:7b
+  #     host: http://localhost:11434

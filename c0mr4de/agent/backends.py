@@ -269,13 +269,21 @@ class OpenAICompatibleBackend(Backend):
             max_tokens=max_tokens,
         )
         choice = response.choices[0]
+        content = choice.message.content or ""
         tool_calls = []
         for tc in choice.message.tool_calls or []:
             tool_calls.append(
                 ToolCall(id=tc.id, name=tc.function.name, arguments=json.loads(tc.function.arguments))
             )
+        # Same fallback as Ollama: some free-tier models emit a correct tool
+        # call as text instead of using the structured field.
+        if not tool_calls:
+            fallback = _extract_fallback_tool_call(content)
+            if fallback is not None:
+                tool_calls.append(fallback)
+                content = ""
         return LLMResponse(
-            text=choice.message.content or "",
+            text=content,
             tool_calls=tool_calls,
             stop_reason=choice.finish_reason or "stop",
             usage={
@@ -283,6 +291,54 @@ class OpenAICompatibleBackend(Backend):
                 "output_tokens": response.usage.completion_tokens if response.usage else 0,
             },
         )
+
+
+def _is_rate_limit(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(s in msg for s in ("429", "rate limit", "rate_limit", "quota", "too many requests", "resource_exhausted"))
+
+
+class RotatingBackend(Backend):
+    """Free-tier survival: an ordered chain of backends tried in round-robin.
+    Put free capable APIs first (Groq Llama-70B, Gemini Flash, Cerebras), the
+    local model last. On a rate-limit it advances a cursor so the next call
+    starts at a fresh provider (spreading load across free quotas); on any
+    error it fails forward to the next backend, so a single task never stalls
+    halfway as long as ONE member is reachable.
+
+    Keep the chain OpenAI-compatible (Groq/Gemini/Cerebras/Ollama all are).
+    Mixing in the Anthropic backend is not supported here - its message shape
+    differs, so a mid-conversation switch to/from it would mismatch history."""
+
+    def __init__(self, backends: list[Backend]):
+        if not backends:
+            raise ValueError("rotating backend needs at least one member")
+        self._backends = backends
+        self._cursor = 0
+        self._last_used = backends[0]
+        self.name = "rotating:" + ",".join(b.name for b in backends)
+
+    def generate(self, system, messages, tools=None, max_tokens=2048) -> LLMResponse:
+        n = len(self._backends)
+        errors = []
+        for offset in range(n):
+            idx = (self._cursor + offset) % n
+            backend = self._backends[idx]
+            try:
+                resp = backend.generate(system, messages, tools=tools, max_tokens=max_tokens)
+                self._last_used = backend
+                return resp
+            except Exception as exc:  # noqa: BLE001 - failover is the whole point
+                errors.append(f"{backend.name}: {exc}")
+                if _is_rate_limit(exc):
+                    # advance the base cursor so subsequent calls skip this one for a while
+                    self._cursor = (idx + 1) % n
+                continue
+        raise RuntimeError("all backends failed:\n" + "\n".join(errors))
+
+    def format_turn(self, response, tool_results):
+        # Delegate to whichever backend actually produced this response.
+        return self._last_used.format_turn(response, tool_results)
 
 
 def build_backend(cfg: dict[str, Any]) -> Backend:
@@ -294,4 +350,6 @@ def build_backend(cfg: dict[str, Any]) -> Backend:
         return AnthropicBackend(model=cfg.get("model", "claude-sonnet-5"), api_key=cfg.get("api_key"))
     if kind == "openai_compatible":
         return OpenAICompatibleBackend(model=cfg["model"], base_url=cfg["base_url"], api_key=cfg["api_key"])
+    if kind == "rotating":
+        return RotatingBackend([build_backend(m) for m in cfg["chain"]])
     raise ValueError(f"unknown backend type: {kind}")
