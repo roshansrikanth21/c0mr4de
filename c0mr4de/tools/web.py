@@ -57,6 +57,36 @@ def decode_jwt(token: str) -> str:
     )
 
 
+def tamper_jwt(token: str, field: str, value: str) -> str:
+    """Modify one field in a JWT's payload and re-emit the token, keeping
+    the ORIGINAL signature segment. This is the exact primitive for testing
+    whether a server verifies signatures: if a token with a changed payload
+    but stale signature is still accepted, the server isn't verifying. Pass
+    the result to http_request as the Bearer token and replay it."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        return "ERROR: not a standard JWT (expected header.payload.signature)"
+    try:
+        pad = parts[1] + "=" * (-len(parts[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(pad))
+    except Exception as exc:  # noqa: BLE001
+        return f"ERROR: could not decode payload: {exc}"
+    # coerce common boolean/number-looking values so acs="Active" vs paid=true both work
+    coerced: object = value
+    if value.lower() in ("true", "false"):
+        coerced = value.lower() == "true"
+    elif value.lstrip("-").isdigit():
+        coerced = int(value)
+    payload[field] = coerced
+    new_payload = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+    tampered = f"{parts[0]}.{new_payload}.{parts[2]}"
+    return (
+        f"tampered token (payload {field}={coerced!r}, original signature kept):\n{tampered}\n"
+        f"Now replay it: http_request to the protected endpoint with header "
+        f'{{"Authorization": "Bearer {tampered}"}} and compare the response to the untampered request.'
+    )
+
+
 def sqlmap(url: str, extra_flags: str = "--batch --level=2") -> str:
     return _run_in_kali(f"sqlmap -u {shlex.quote(url)} {extra_flags}")
 
@@ -87,6 +117,29 @@ TOOLS = [
         parameters={"type": "object", "properties": {"token": {"type": "string"}}, "required": ["token"]},
         fn=decode_jwt,
     ),
+    Tool(
+        name="tamper_jwt",
+        description=(
+            "Change one field in a JWT payload and get back a tampered token (original signature kept). "
+            "Use this to test whether a server verifies signatures - flip a status/role/payment field, "
+            "then replay the returned token with http_request. Do NOT hand-write JWT crypto code; use this."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "token": {"type": "string"},
+                "field": {"type": "string", "description": "payload field to change, e.g. acs, role, paid"},
+                "value": {"type": "string", "description": "new value, e.g. Active, admin, true"},
+            },
+            "required": ["token", "field", "value"],
+        },
+        fn=tamper_jwt,
+    ),
+]
+
+# These shell out to the kali-mcp Docker image, so they're only registered
+# when Docker is available (see tools/__init__.py) - same as the recon tools.
+DOCKER_TOOLS = [
     Tool(
         name="sqlmap",
         description="Test a URL for SQL injection.",

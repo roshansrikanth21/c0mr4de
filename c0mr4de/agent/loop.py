@@ -12,6 +12,23 @@ from c0mr4de.tools.base import ToolRegistry
 from c0mr4de.tools.playbook import consult_knowledge
 
 
+_PLAN_SIGNALS = ("```", "let's", "we will", "we should", "next step", "step 1", "i will", "import ")
+
+
+def _looks_like_unexecuted_plan(text: str, tools_used: bool) -> bool:
+    """Heuristic: did the model describe/code an action instead of calling a
+    tool? True when the text reads like a plan or contains code. If no tool
+    has run yet, be more eager to nudge (an all-text first turn on an action
+    task is almost always narration)."""
+    if not text:
+        return False
+    low = text.lower()
+    if any(sig in low for sig in _PLAN_SIGNALS):
+        return True
+    # Long, action-implying text with nothing executed yet also warrants a push.
+    return not tools_used and len(text) > 400
+
+
 @dataclass
 class StepLog:
     step: int
@@ -44,6 +61,9 @@ class AgentLoop:
         messages: list[dict] = [{"role": "user", "content": primed_task}]
         tool_schemas = self.tools.schemas()
 
+        nudges_left = 3
+        tools_used = False
+
         for step in range(1, self.max_steps + 1):
             response = self.backend.generate(SYSTEM_PROMPT, messages, tools=tool_schemas)
             step_log = StepLog(step=step, assistant_text=response.text)
@@ -52,8 +72,31 @@ class AgentLoop:
                 print(f"\n[step {step}] {self.backend.name} thinks:\n{response.text}\n")
 
             if not response.tool_calls:
+                # Weak models often narrate a plan (or write code) instead of
+                # actually calling tools, then stop. If that looks like what
+                # happened, push back once rather than accepting it as done.
+                if nudges_left > 0 and _looks_like_unexecuted_plan(response.text, tools_used):
+                    nudges_left -= 1
+                    if self.verbose:
+                        print("  !! model narrated instead of acting - nudging to execute the tools")
+                    messages.append({"role": "assistant", "content": response.text})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "You described steps but did not actually call any tools - writing code "
+                                "in a code block does NOT run it. Execute the plan now by calling the real "
+                                "tools (decode_jwt, tamper_jwt, http_request, write_report, ...). Do not "
+                                "write Python; issue the tool calls."
+                            ),
+                        }
+                    )
+                    self.log.append(step_log)
+                    continue
                 self.log.append(step_log)
                 return response.text
+
+            tools_used = True
 
             tool_results: list[tuple] = []
             for call in response.tool_calls:

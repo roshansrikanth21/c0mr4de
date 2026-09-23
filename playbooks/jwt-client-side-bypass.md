@@ -24,11 +24,14 @@ status* (not just login) behind that token.
      token itself at a fixed offset. Haveloc had both — hardcoded IV `1234567812345678`
      and the AES key sliced out of the token at a fixed position.
 4. **Test whether the server actually verifies it.** This is the step that turns
-   "interesting" into "critical": flip a field client-side (e.g., `acs: "Un Paid"` ->
-   `"Active"`), re-encode/re-encrypt with the same broken scheme, and replay it with
-   `http_request`. If the server accepts the modified token, there is no server-side
-   signature/authorization check — CWE-345 (no verification) and usually CWE-602
-   (client-side enforcement of a security decision).
+   "interesting" into "critical": use the `tamper_jwt` tool to flip a field
+   (e.g., `field="acs", value="Active"`) — it keeps the original signature so you're
+   directly testing whether the server verifies it — then replay the returned token
+   with `http_request` (send it as `Authorization: Bearer <tampered>`). Do NOT
+   hand-write JWT crypto in a code block; call `tamper_jwt`. If the server accepts the
+   modified token, there is no server-side signature/authorization check — CWE-345
+   (no verification) and usually CWE-602 (client-side enforcement of a security
+   decision).
 5. **Check cookie flags while you're in there.** Missing `Secure` on an auth cookie,
    missing `HttpOnly` on anything readable by JS — both showed up in Haveloc as
    secondary findings, cheap to check once you're already looking at the token.
