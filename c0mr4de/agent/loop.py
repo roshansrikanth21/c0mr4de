@@ -38,12 +38,15 @@ class StepLog:
 
 
 class AgentLoop:
-    def __init__(self, backend: Backend, tools: ToolRegistry, max_steps: int = 25, verbose: bool = True):
+    def __init__(self, backend: Backend, tools: ToolRegistry, max_steps: int = 25, verbose: bool = True, on_event=None):
         self.backend = backend
         self.tools = tools
         self.max_steps = max_steps
         self.verbose = verbose
         self.log: list[StepLog] = []
+        # on_event(kind, data): fired for live UIs. kinds: "thought", "tool_call",
+        # "tool_result", "final". Optional - None means no streaming.
+        self.on_event = on_event or (lambda kind, data: None)
 
     def run(self, task: str) -> str:
         # Auto-inject relevant playbook/vault knowledge up front rather than
@@ -70,6 +73,8 @@ class AgentLoop:
 
             if self.verbose and response.text:
                 print(f"\n[step {step}] {self.backend.name} thinks:\n{response.text}\n")
+            if response.text:
+                self.on_event("thought", {"step": step, "text": response.text})
 
             if not response.tool_calls:
                 # Weak models often narrate a plan (or write code) instead of
@@ -94,6 +99,7 @@ class AgentLoop:
                     self.log.append(step_log)
                     continue
                 self.log.append(step_log)
+                self.on_event("final", {"text": response.text})
                 return response.text
 
             tools_used = True
@@ -106,10 +112,12 @@ class AgentLoop:
                 else:
                     if self.verbose:
                         print(f"  -> calling {call.name}({call.arguments})")
+                    self.on_event("tool_call", {"name": call.name, "arguments": call.arguments})
                     result = tool.run(**call.arguments)
                     if self.verbose:
                         preview = result if len(result) < 500 else result[:500] + "... (truncated)"
                         print(f"  <- {preview}")
+                    self.on_event("tool_result", {"name": call.name, "result": result})
                 step_log.tool_calls.append(f"{call.name}({call.arguments})")
                 step_log.tool_results.append(result)
                 tool_results.append((call, result))
