@@ -2,9 +2,16 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import yaml
+
+# Windows consoles default to cp1252 and crash on non-ASCII the model echoes.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:  # noqa: BLE001
+    pass
 
 from c0mr4de.agent.backends import build_backend
 from c0mr4de.agent.loop import AgentLoop

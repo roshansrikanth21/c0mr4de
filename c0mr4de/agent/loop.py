@@ -53,8 +53,14 @@ class AgentLoop:
         # relying on the model to remember to call consult_knowledge itself -
         # live testing showed a 7B model will happily skip that step even when
         # explicitly told to use it. This guarantees the grounding is present
-        # regardless of the backend's tool-use discipline.
-        knowledge = consult_knowledge(task)
+        # regardless of the backend's tool-use discipline. Wrapped defensively:
+        # RAG needs the local embedder (Ollama) up, but a missing embedder must
+        # NOT crash the whole run - the model can still consult_knowledge later
+        # if/when it comes back, and cloud-only users may not run Ollama at all.
+        try:
+            knowledge = consult_knowledge(task)
+        except Exception as exc:  # noqa: BLE001
+            knowledge = f"(knowledge base unavailable this run: {exc})"
         primed_task = (
             f"{task}\n\n"
             f"--- Relevant knowledge auto-retrieved for this task (already consulted, no need to call "

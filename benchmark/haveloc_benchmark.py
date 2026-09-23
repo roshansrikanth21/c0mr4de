@@ -84,6 +84,13 @@ def grade(loop: AgentLoop) -> dict:
 
 
 def main():
+    # Windows consoles default to cp1252, which crashes on non-ASCII chars a
+    # model may echo back (e.g. a non-breaking hyphen). Force UTF-8 output.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--max-steps", type=int, default=15)
     args = parser.parse_args()
