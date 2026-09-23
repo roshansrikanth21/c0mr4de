@@ -27,16 +27,21 @@ backend:
   # Keep every member OpenAI-compatible (do NOT put the anthropic type in here).
   # Verify current free models/limits when you set it up - they change.
   #
+  # NOTE on free limits: Groq free = 8000 tokens/MINUTE and ~200k tokens/DAY.
+  # Long autonomous runs exhaust the daily cap. That's why a SECOND free cloud
+  # provider (Gemini) matters - the chain fails Groq->Gemini before dropping to
+  # the slow local model. The rotating backend now correctly does that failover.
+  #
   # type: rotating
   # chain:
   #   - type: openai_compatible
-  #     model: llama-3.3-70b-versatile
+  #     model: openai/gpt-oss-120b            # verified free+capable on Groq (120B)
   #     base_url: https://api.groq.com/openai/v1
   #     api_key: gsk_...                       # free Groq key
   #   - type: openai_compatible
   #     model: gemini-2.5-flash
   #     base_url: https://generativelanguage.googleapis.com/v1beta/openai
-  #     api_key: ...                            # free Google AI Studio key
+  #     api_key: ...                            # free Google AI Studio key - add this to survive Groq's daily cap
   #   - type: ollama                            # last resort - never fully stops
   #     model: qwen2.5-coder:7b
   #     host: http://localhost:11434

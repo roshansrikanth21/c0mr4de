@@ -37,6 +37,8 @@ def main() -> None:
     run_p.add_argument("task", type=str, help="What to do, e.g. 'recon example.com and report findings'")
     run_p.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     run_p.add_argument("--max-steps", type=int, default=25)
+    run_p.add_argument("--save", metavar="TARGET", default=None,
+                       help="After the run, auto-save the engagement to the vault under this target label")
 
     ingest_p = sub.add_parser("ingest", help="Ingest the Obsidian vault + playbooks into the knowledge store")
     ingest_p.add_argument("--vault", type=Path, default=None)
@@ -57,6 +59,11 @@ def main() -> None:
         loop = AgentLoop(backend=backend, tools=registry, max_steps=args.max_steps)
         result = loop.run(args.task)
         print("\n=== FINAL ===\n" + result)
+        if args.save:
+            from c0mr4de.engagement import save_engagement
+
+            path = save_engagement(loop, args.save)
+            print(f"\n[engagement saved to vault: {path}]")
 
 
 if __name__ == "__main__":

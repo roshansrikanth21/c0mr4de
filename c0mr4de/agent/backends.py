@@ -361,19 +361,24 @@ class RotatingBackend(Backend):
     def generate(self, system, messages, tools=None, max_tokens=2048) -> LLMResponse:
         n = len(self._backends)
         errors = []
-        for offset in range(n):
-            idx = (self._cursor + offset) % n
+        start = self._cursor  # capture ONCE - mutating self._cursor inside the loop
+        next_cursor = self._cursor  # would make idx skip members (it retried Groq
+        for offset in range(n):  # instead of trying Ollama - the fallback never fired).
+            idx = (start + offset) % n
             backend = self._backends[idx]
             try:
                 resp = backend.generate(system, messages, tools=tools, max_tokens=max_tokens)
                 self._last_used = backend
+                self._cursor = next_cursor
                 return resp
             except Exception as exc:  # noqa: BLE001 - failover is the whole point
                 errors.append(f"{backend.name}: {exc}")
                 if _is_rate_limit(exc):
-                    # advance the base cursor so subsequent calls skip this one for a while
-                    self._cursor = (idx + 1) % n
+                    # start the NEXT call after this rate-limited member (spread load /
+                    # skip a provider whose daily quota is spent)
+                    next_cursor = (idx + 1) % n
                 continue
+        self._cursor = next_cursor
         raise RuntimeError("all backends failed:\n" + "\n".join(errors))
 
     def format_turn(self, response, tool_results):
