@@ -106,7 +106,28 @@ class OllamaBackend(Backend):
         self._client = ollama.Client(host=host)
 
     def generate(self, system, messages, tools=None, max_tokens=2048) -> LLMResponse:
-        chat_messages = [{"role": "system", "content": system}] + messages
+        # Normalize history that a cloud (OpenAI-style) backend may have built
+        # before failover: its tool_calls[].function.arguments are JSON strings,
+        # but Ollama's client validates them as dicts. Convert so mid-conversation
+        # failover to local doesn't crash.
+        norm_messages = []
+        for m in messages:
+            tcs = m.get("tool_calls") if isinstance(m, dict) else None
+            if tcs:
+                m = dict(m)
+                m["tool_calls"] = []
+                for tc in tcs:
+                    tc = dict(tc)
+                    fn = dict(tc.get("function", {}))
+                    if isinstance(fn.get("arguments"), str):
+                        try:
+                            fn["arguments"] = json.loads(fn["arguments"])
+                        except json.JSONDecodeError:
+                            fn["arguments"] = {}
+                    tc["function"] = fn
+                    m["tool_calls"].append(tc)
+            norm_messages.append(m)
+        chat_messages = [{"role": "system", "content": system}] + norm_messages
         # Ollama mirrors the OpenAI tool-calling convention: each tool must be
         # wrapped as {"type": "function", "function": {...}}, not passed flat.
         wrapped_tools = [
@@ -262,12 +283,31 @@ class OpenAICompatibleBackend(Backend):
             }
             for t in (tools or [])
         ]
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": system}] + messages,
-            tools=openai_tools or None,
-            max_tokens=max_tokens,
-        )
+        try:
+            response = self._client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "system", "content": system}] + messages,
+                tools=openai_tools or None,
+                max_tokens=max_tokens,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Some providers (Groq gpt-oss) return 400 output_parse_failed when
+            # the model emits reasoning the tool-parser can't structure. The
+            # useful reasoning is in `failed_generation` - recover it as a plain
+            # thought (with any tool call it contains) instead of crashing, so
+            # the loop can nudge and continue.
+            failed = getattr(getattr(exc, "body", None), "get", lambda *_: None)("failed_generation") \
+                if isinstance(getattr(exc, "body", None), dict) else None
+            if failed is None and "failed_generation" in str(exc):
+                failed = str(exc).split("failed_generation", 1)[1][:2000]
+            if failed:
+                recovered = _extract_fallback_tool_call(failed)
+                return LLMResponse(
+                    text="" if recovered else failed[:1500],
+                    tool_calls=[recovered] if recovered else [],
+                    stop_reason="tool_use" if recovered else "end_turn",
+                )
+            raise
         choice = response.choices[0]
         content = choice.message.content or ""
         tool_calls = []
