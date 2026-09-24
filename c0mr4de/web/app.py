@@ -25,6 +25,7 @@ from c0mr4de.agent.loop import AgentLoop
 from c0mr4de.tools import build_default_registry
 from c0mr4de.tools.files import WORKSPACE
 from c0mr4de.tools.ocr import ocr_image
+from c0mr4de.web import chats
 
 REPO = Path(__file__).resolve().parent.parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
@@ -53,21 +54,46 @@ async def upload(file: UploadFile):
     return {"path": str(dest), "is_image": is_image, "ocr": extracted}
 
 
+# --- conversation management ---
+@app.get("/chats")
+def chats_list():
+    return chats.list_chats()
+
+
+@app.post("/chats/new")
+def chats_new():
+    return chats.new_chat()
+
+
+@app.get("/chats/{chat_id}")
+def chats_get(chat_id: str):
+    return chats.get_chat(chat_id) or {"error": "not found"}
+
+
 @app.get("/run")
-def run(task: str):
-    """Stream the agent's steps as Server-Sent Events."""
+def run(task: str, chat_id: str = ""):
+    """Stream the agent's steps as Server-Sent Events, within a conversation."""
     events: queue.Queue = queue.Queue()
+    collected: list = []
 
     def on_event(kind, data):
         events.put({"kind": kind, "data": data})
+        if kind in ("thought", "tool_call", "tool_result", "final", "finding"):
+            collected.append({"kind": kind, "data": data})
 
     def worker():
         try:
+            if chat_id:
+                chats.append_turn(chat_id, "user", task)
+            recap = chats.prior_context(chat_id) if chat_id else ""
+            full_task = f"{task}\n\n[earlier in this session]\n{recap}" if recap else task
             backend = _load_backend()
             registry = build_default_registry()
             loop = AgentLoop(backend=backend, tools=registry, verbose=False, on_event=on_event)
             events.put({"kind": "backend", "data": {"name": backend.name, "tools": registry.names()}})
-            loop.run(task)
+            result = loop.run(full_task)
+            if chat_id:
+                chats.append_turn(chat_id, "summary", result, collected)
         except Exception as exc:  # noqa: BLE001
             events.put({"kind": "error", "data": {"text": str(exc)}})
         finally:
