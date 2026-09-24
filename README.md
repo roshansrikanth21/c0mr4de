@@ -27,27 +27,65 @@ honestly:
 ```
 c0mr4de/
   agent/
-    backends.py    — model-agnostic LLM interface (Ollama / Anthropic / any
-                      OpenAI-compatible hosted-open-weight provider)
-    loop.py         — the ReAct tool-calling loop
-    prompts.py       — system prompt
+    backends.py    — model-agnostic LLM interface: Ollama / Anthropic /
+                      OpenAI-compatible, plus RotatingBackend (free-API failover)
+    loop.py         — ReAct tool loop: RAG grounding, context trimming, nudges,
+                      wrap-up-and-report near the step cap, live event streaming
+    prompts.py       — system prompt (professional pentest methodology)
   tools/
-    recon.py         — nmap, gobuster, ffuf, whatweb (via the kali-mcp Docker image)
-    web.py            — raw HTTP requests, JWT decode, sqlmap, nikto
-    files.py          — sandboxed workspace read/write
-    playbook.py        — consult_knowledge (RAG retrieval tool)
+    web.py            — http_request, decode_jwt, tamper_jwt; sqlmap/nikto (Docker)
+    browser.py         — Playwright headless Chromium: navigate, read localStorage/
+                          cookies, run JS, screenshot (reads tokens off live pages)
+    fuzz.py             — native path/param fuzzer (fuzz_paths, fuzz_param) - no Docker
+    recon.py             — nmap, gobuster, ffuf, whatweb (via kali-mcp Docker image)
+    recon_stack.py        — reconftw + subfinder wrappers
+    osint.py               — username_search (~20 platforms), google_dork, and a
+                              Maltego-style interactive graph (render_osint_graph)
+    ocr.py                  — EasyOCR text extraction from uploaded images
+    operator.py              — ask_operator: non-blocking human-in-the-loop
+    report.py                 — write_report -> standard finding format
+    files.py / playbook.py     — sandboxed workspace I/O; consult_knowledge (RAG)
   memory/
     embeddings.py       — Ollama nomic-embed-text (local, free)
     vectorstore.py        — Chroma, persisted to ./memory_store
-    ingest.py               — loads playbooks/ + the Obsidian vault into the store
-playbooks/                — the distilled methodology (see above)
+    ingest.py               — loads playbooks/ + Obsidian vault + engagement vault
+  engagement.py         — auto-save a run (target + fingerprinted stack + sequence)
+  web/                    — minimalistic FastAPI UI: chat, upload+OCR, live streaming
+playbooks/                — distilled generic methodology (JWT bypass, recon, OWASP,
+                            source audit, OSINT, tool references)
+pentest-vault/            — engagement library: actual targets + the sequences that
+                            worked, ingested so the agent reuses methodology by stack
+benchmark/                — mock targets + scored harnesses (Haveloc JWT, path traversal)
+tests/test_core.py        — pure-logic unit tests (9 passing), incl. failover regression
 config/config.example.yaml — pick your backend here
 ```
 
 The backend is deliberately swappable — the agent loop has no idea whether it's
 talking to a free local model or a paid API. This is the actual design answer to
-"local vs. API": don't choose once, choose **per call** if you want to, by running
-routine steps on one backend and routing the hard reasoning to another.
+"local vs. API": don't choose once, choose **per call** if you want to. The
+`rotating` backend chains free providers (Groq -> Gemini -> local) and fails over
+on rate-limit, so a run never fully stops.
+
+## Proven capability (benchmarks)
+
+- **Haveloc JWT payment-gate bypass** (6/6): full exploit chain + professional
+  report, autonomously, on the free Groq brain. The local 7B scored 4/6,1/6,3/6.
+- **Novel path traversal, no playbook** (5/5): genuine generalization - reasoned
+  to the technique unprompted and fuzzed for the filename.
+- **Live m1rage (authorized)**: found no way in and reported clean - does NOT
+  fabricate findings on a hardened target.
+
+## Free-tier reality (Groq)
+
+Free Groq = **8000 tokens/minute AND ~200k tokens/day**. Long autonomous runs hit
+the daily cap. Add a free Gemini key as a second `rotating` member so it fails over
+cloud->cloud before dropping to the slow local model. See config.example.yaml.
+
+## Testing
+
+`python tests/test_core.py` (or `python -m pytest tests/`) - no network/LLM/Docker
+needed. Covers the rotating failover, JWT tamper/decode, context trimming, the
+text tool-call fallback parser, and stack fingerprinting.
 
 ## Hardware/cost reality (know this before you're surprised)
 
