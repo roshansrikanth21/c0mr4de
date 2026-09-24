@@ -93,8 +93,22 @@ class AgentLoop:
 
         nudges_left = 3
         tools_used = False
+        wrapup_sent = False
 
         for step in range(1, self.max_steps + 1):
+            # Near the step cap, tell the model to wrap up and report, so a run
+            # never just dies at the limit with nothing written (the m1rage run
+            # hit the cap mid-recon and produced no report).
+            if not wrapup_sent and step >= self.max_steps - 1:
+                wrapup_sent = True
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "You are at the step limit. STOP exploring. Now write up what you have: call "
+                        "write_report with every finding so far (or state plainly that you found nothing), "
+                        "then give a final summary. Do not start new probes."
+                    ),
+                })
             response = self.backend.generate(SYSTEM_PROMPT, _trim_history(messages), tools=tool_schemas)
             step_log = StepLog(step=step, assistant_text=response.text)
 
