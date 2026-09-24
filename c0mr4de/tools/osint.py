@@ -123,23 +123,61 @@ _GRAPH_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>c0mr4de OSINT graph</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.js"></script>
 <style>
- body{{margin:0;background:#0a0c10;color:#d7dce5;font-family:ui-monospace,Consolas,monospace}}
- #h{{padding:12px 18px;border-bottom:1px solid #232936}} #h b{{color:#4ade80;letter-spacing:1px}}
- #net{{width:100vw;height:calc(100vh - 48px)}}
+ body{{margin:0;background:#0a0c10;color:#d7dce5;font-family:ui-monospace,Consolas,monospace;overflow:hidden}}
+ #h{{padding:12px 18px;border-bottom:1px solid #232936;display:flex;align-items:center;gap:10px}}
+ #h b{{color:#4ade80;letter-spacing:1px}} #h .sub{{color:#7b8494;font-size:12px}}
+ #wrap{{position:relative}} #net{{width:100vw;height:calc(100vh - 49px)}}
+ #legend{{position:absolute;top:12px;right:12px;background:#12151ccc;border:1px solid #232936;
+   border-radius:8px;padding:10px 12px;font-size:11px;backdrop-filter:blur(4px)}}
+ #legend .row{{display:flex;align-items:center;gap:7px;margin:3px 0}}
+ #legend .dot{{width:10px;height:10px;border-radius:50%;display:inline-block}}
+ #search{{position:absolute;top:12px;left:12px;background:#12151c;border:1px solid #232936;
+   color:#d7dce5;border-radius:8px;padding:7px 11px;font-family:inherit;font-size:12px;width:200px}}
+ #search:focus{{outline:none;border-color:#1f6b40}}
 </style></head><body>
-<div id="h"><b>c0mr4de</b> · OSINT graph · {n} entities, {e} links</div>
-<div id="net"></div>
+<div id="h"><b>c0mr4de</b> <span class="sub">OSINT graph · {n} entities · {e} links · drag to explore, scroll to zoom</span></div>
+<div id="wrap">
+ <input id="search" placeholder="find a node…"/>
+ <div id="legend">{legend}</div>
+ <div id="net"></div>
+</div>
 <script>
+const COLORS={{username:'#4ade80',profile:'#60a5fa',url:'#a78bfa',email:'#f59e0b',name:'#f87171',phone:'#f472b6',org:'#34d399',location:'#fbbf24',domain:'#22d3ee'}};
 const nodes=new vis.DataSet({nodes});
 const edges=new vis.DataSet({edges});
-const colors={{username:'#4ade80',profile:'#60a5fa',url:'#a78bfa',email:'#f59e0b',name:'#f87171',phone:'#f472b6',org:'#34d399',location:'#fbbf24',domain:'#22d3ee'}};
-nodes.forEach(nd=>nodes.update({{id:nd.id,color:{{background:colors[nd.group]||'#94a3b8',border:'#1f2937'}},font:{{color:'#d7dce5'}}}}));
-new vis.Network(document.getElementById('net'),{{nodes,edges}},{{
- nodes:{{shape:'dot',size:16,borderWidth:2}},
- edges:{{color:'#334155',arrows:'to',font:{{color:'#7b8494',size:10,strokeWidth:0}}}},
- physics:{{stabilization:true,barnesHut:{{gravitationalConstant:-8000,springLength:130}}}}
+nodes.forEach(nd=>nodes.update({{id:nd.id,
+  color:{{background:COLORS[nd.group]||'#94a3b8',border:'#0a0c10',highlight:{{background:'#fff',border:COLORS[nd.group]||'#94a3b8'}}}},
+  font:{{color:'#c7cede',size:12,face:'ui-monospace'}}}}));
+const net=new vis.Network(document.getElementById('net'),{{nodes,edges}},{{
+ nodes:{{shape:'dot',borderWidth:2,scaling:{{min:10,max:42,label:{{min:11,max:20}}}},shadow:{{enabled:true,color:'#00000066',size:8}}}},
+ edges:{{color:{{color:'#2b3444',highlight:'#4ade80'}},arrows:{{to:{{scaleFactor:0.5}}}},smooth:{{type:'continuous'}},
+   font:{{color:'#6b7686',size:9,strokeWidth:0,align:'middle'}},width:1.2}},
+ physics:{{stabilization:{{iterations:220}},barnesHut:{{gravitationalConstant:-12000,springLength:150,springConstant:0.04,damping:0.5}}}},
+ interaction:{{hover:true,tooltipDelay:120}}
+}});
+// search-to-focus
+document.getElementById('search').addEventListener('keydown',e=>{{
+ if(e.key!=='Enter')return; const q=e.target.value.toLowerCase(); if(!q)return;
+ const hit=nodes.get().find(n=>(n.label||'').toLowerCase().includes(q)||(''+n.id).toLowerCase().includes(q));
+ if(hit){{net.focus(hit.id,{{scale:1.3,animation:true}});net.selectNodes([hit.id]);}}
 }});
 </script></body></html>"""
+
+
+def _legend_html(types_present) -> str:
+    labels = {
+        "username": "username", "profile": "profile", "url": "url/page", "email": "email",
+        "name": "name", "phone": "phone", "org": "org", "location": "location", "domain": "domain",
+    }
+    colors = {
+        "username": "#4ade80", "profile": "#60a5fa", "url": "#a78bfa", "email": "#f59e0b",
+        "name": "#f87171", "phone": "#f472b6", "org": "#34d399", "location": "#fbbf24", "domain": "#22d3ee",
+    }
+    rows = [
+        f'<div class="row"><span class="dot" style="background:{colors.get(t, "#94a3b8")}"></span>{labels.get(t, t)}</div>'
+        for t in labels if t in types_present
+    ]
+    return "".join(rows) or '<div class="row">no entities</div>'
 
 
 def render_osint_graph(name: str = "osint_graph.html") -> str:
@@ -151,13 +189,20 @@ def render_osint_graph(name: str = "osint_graph.html") -> str:
 
     if not _GRAPH["nodes"]:
         return "graph is empty - run username_search / google_dork / add_osint_note first."
+    # node size scales with degree (hubs render bigger) via vis "value"
+    degree: dict[str, int] = {}
+    for s, d, _ in _GRAPH["edges"]:
+        degree[s] = degree.get(s, 0) + 1
+        degree[d] = degree.get(d, 0) + 1
     nodes = [
-        {"id": nid, "label": meta["label"], "group": meta["type"]}
+        {"id": nid, "label": meta["label"], "group": meta["type"], "value": degree.get(nid, 1)}
         for nid, meta in _GRAPH["nodes"].items()
     ]
     edges = [{"from": s, "to": d, "label": lbl} for s, d, lbl in _GRAPH["edges"]]
+    types_present = {meta["type"] for meta in _GRAPH["nodes"].values()}
     html = _GRAPH_HTML.format(
-        n=len(nodes), e=len(edges), nodes=_json.dumps(nodes), edges=_json.dumps(edges)
+        n=len(nodes), e=len(edges), nodes=_json.dumps(nodes), edges=_json.dumps(edges),
+        legend=_legend_html(types_present),
     )
     dest = WORKSPACE / "osint"
     dest.mkdir(parents=True, exist_ok=True)
