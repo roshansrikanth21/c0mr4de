@@ -99,7 +99,7 @@ class AgentLoop:
             # Near the step cap, tell the model to wrap up and report, so a run
             # never just dies at the limit with nothing written (the m1rage run
             # hit the cap mid-recon and produced no report).
-            if not wrapup_sent and step >= self.max_steps - 1:
+            if not wrapup_sent and step >= self.max_steps - 3:
                 wrapup_sent = True
                 messages.append({
                     "role": "user",
