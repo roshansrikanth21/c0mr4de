@@ -20,6 +20,10 @@ from fastapi import FastAPI, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+import httpx
+from fastapi import Body
+
+from c0mr4de import stats
 from c0mr4de.agent.backends import build_backend
 from c0mr4de.agent.loop import AgentLoop
 from c0mr4de.tools import build_default_registry
@@ -68,6 +72,65 @@ def chats_new():
 @app.get("/chats/{chat_id}")
 def chats_get(chat_id: str):
     return chats.get_chat(chat_id) or {"error": "not found"}
+
+
+@app.delete("/chats/{chat_id}")
+def chats_delete(chat_id: str):
+    return {"deleted": chats.delete_chat(chat_id)}
+
+
+@app.post("/chats/{chat_id}/rename")
+def chats_rename(chat_id: str, title: str = Body(..., embed=True)):
+    return {"renamed": chats.rename_chat(chat_id, title)}
+
+
+@app.get("/stats")
+def stats_get():
+    return stats.snapshot()
+
+
+# known free-tier limits, shown in settings (informational)
+_LIMITS = {
+    "groq": "free: ~8k tokens/min, ~200k tokens/day (per model)",
+    "gemini": "free: generous TPM, limited requests/day (varies by model)",
+    "ollama": "local: no quota — bound only by your hardware",
+    "anthropic": "paid: usage-billed, no hard cap",
+}
+
+
+def _limit_for(name: str) -> str:
+    for k, v in _LIMITS.items():
+        if k in name.lower():
+            return v
+    return "unknown"
+
+
+@app.get("/settings")
+def settings_get():
+    cfg = yaml.safe_load((REPO / "config" / "config.yaml").read_text())
+    b = cfg["backend"]
+    members = b.get("chain", [b]) if b.get("type") == "rotating" else [b]
+    out = []
+    for m in members:
+        name = m.get("model", m.get("type", "?"))
+        base = m.get("base_url", m.get("host", "local"))
+        reachable = None
+        try:
+            if m.get("type") == "ollama":
+                httpx.get((m.get("host", "http://localhost:11434")) + "/api/tags", timeout=3)
+                reachable = True
+            elif m.get("base_url"):
+                # /models is a cheap auth-checked probe on OpenAI-compatible providers
+                r = httpx.get(m["base_url"].rstrip("/") + "/models",
+                              headers={"Authorization": f"Bearer {m.get('api_key','')}"}, timeout=5)
+                reachable = r.status_code == 200
+        except Exception:  # noqa: BLE001
+            reachable = False
+        out.append({"model": name, "endpoint": base, "limits": _limit_for(name + " " + base),
+                    "reachable": reachable, "key_set": bool(m.get("api_key"))})
+    registry = build_default_registry()
+    return {"mode": b.get("type", "single"), "chain": out, "tools": registry.names(),
+            "tool_count": len(registry.names())}
 
 
 @app.get("/run")

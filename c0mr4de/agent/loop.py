@@ -4,8 +4,10 @@ step cap is hit. Backend-agnostic - swap Ollama for Anthropic in config
 and nothing here changes."""
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
+from c0mr4de import stats
 from c0mr4de.agent.backends import Backend
 from c0mr4de.agent.prompts import SYSTEM_PROMPT
 from c0mr4de.tools.base import ToolRegistry
@@ -109,7 +111,11 @@ class AgentLoop:
                         "then give a final summary. Do not start new probes."
                     ),
                 })
+            _t0 = time.time()
             response = self.backend.generate(SYSTEM_PROMPT, _trim_history(messages), tools=tool_schemas)
+            _served = getattr(self.backend, "_last_used", self.backend).name
+            stats.record(_served, response.usage.get("input_tokens", 0),
+                         response.usage.get("output_tokens", 0), time.time() - _t0)
             step_log = StepLog(step=step, assistant_text=response.text)
 
             if self.verbose and response.text:

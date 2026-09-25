@@ -58,6 +58,23 @@ def append_turn(chat_id: str, role: str, content: str, events: list | None = Non
     _path(chat_id).write_text(json.dumps(doc), encoding="utf-8")
 
 
+def delete_chat(chat_id: str) -> bool:
+    p = _path(chat_id)
+    if p.exists():
+        p.unlink()
+        return True
+    return False
+
+
+def rename_chat(chat_id: str, title: str) -> bool:
+    doc = get_chat(chat_id)
+    if doc is None:
+        return False
+    doc["title"] = title[:80]
+    _path(chat_id).write_text(json.dumps(doc), encoding="utf-8")
+    return True
+
+
 def prior_context(chat_id: str, max_chars: int = 1200) -> str:
     """A short recap of what happened earlier in this chat, injected so a
     follow-up run has continuity without replaying the whole tool history."""
