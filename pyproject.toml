@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "c0mr4de"
+version = "0.1.0"
+description = "Autonomous pentest + OSINT agent (single-agent and swarm) for authorized security testing"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Roshan Srikanth" }]
+keywords = ["pentest", "security", "osint", "agent", "swarm", "recon"]
+
+dependencies = [
+  "httpx>=0.27.0",
+  "pyyaml>=6.0",
+  "openai>=1.50.0",
+  "ollama>=0.6.2",
+]
+
+[project.optional-dependencies]
+# the full local stack (RAG memory, web UI, OCR, hosted-Claude backend)
+full = [
+  "anthropic>=0.116.0",
+  "chromadb>=1.5.9",
+  "fastapi>=0.115.0",
+  "uvicorn>=0.32.0",
+  "python-multipart>=0.0.9",
+  "pillow>=10.0.0",
+  "easyocr>=1.7.0",
+]
+# browser control and email OSINT (optional integrations)
+browser = ["playwright>=1.40"]
+osint = ["holehe>=1.61"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+c0mr4de = "c0mr4de.cli:main"
+
+[project.urls]
+Repository = "https://github.com/roshansrikanth21/c0mr4de"
+
+[tool.setuptools.packages.find]
+include = ["c0mr4de*"]
+
+[tool.setuptools.package-data]
+"c0mr4de.web" = ["static/*"]

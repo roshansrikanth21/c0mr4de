@@ -105,6 +105,15 @@ choice accordingly.
 
 ## Setup
 
+Install as a package (gives you the `c0mr4de` command):
+
+```bash
+pip install -e ".[full,browser,osint]"   # full local stack + browser + email OSINT
+# or minimal: pip install -e .            # core agent only
+```
+
+Or run the bundled setup script (installs deps, pulls local models, ingests knowledge):
+
 ```powershell
 cd D:\c0mr4de
 .\scripts\setup.ps1
