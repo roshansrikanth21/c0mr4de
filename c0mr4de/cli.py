@@ -39,6 +39,10 @@ def main() -> None:
     run_p.add_argument("--max-steps", type=int, default=25)
     run_p.add_argument("--save", metavar="TARGET", default=None,
                        help="After the run, auto-save the engagement to the vault under this target label")
+    for p in (run_p,):
+        p.add_argument("--auth-host", default="", help="Host you're authorized to test as a logged-in user")
+        p.add_argument("--auth-cookie", default="", help="Session cookie for --auth-host, e.g. 'session=abc; csrf=xyz'")
+        p.add_argument("--auth-header", default="", help="Auth header for --auth-host, e.g. 'Authorization: Bearer ...'")
 
     ingest_p = sub.add_parser("ingest", help="Ingest the Obsidian vault + playbooks into the knowledge store")
     ingest_p.add_argument("--vault", type=Path, default=None)
@@ -47,8 +51,21 @@ def main() -> None:
     swarm_p.add_argument("target", type=str, help="Target URL/host")
     swarm_p.add_argument("--objective", type=str, default="Find, exploit and chain vulnerabilities; capture any secret; report.")
     swarm_p.add_argument("--max-steps", type=int, default=16)
+    swarm_p.add_argument("--auth-host", default="")
+    swarm_p.add_argument("--auth-cookie", default="")
+    swarm_p.add_argument("--auth-header", default="")
 
     args = parser.parse_args()
+
+    # apply operator-provided auth for authenticated testing
+    if getattr(args, "auth_host", ""):
+        from c0mr4de import auth
+        hdrs = {}
+        if getattr(args, "auth_header", ""):
+            k, _, v = args.auth_header.partition(":")
+            hdrs[k.strip()] = v.strip()
+        auth.set_auth(args.auth_host, cookie=getattr(args, "auth_cookie", ""), headers=hdrs)
+        print(f"[auth] session set for {args.auth_host} — tools will operate as the logged-in user there")
 
     if args.command == "swarm":
         from c0mr4de.swarm.orchestrator import Swarm

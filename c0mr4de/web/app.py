@@ -90,6 +90,31 @@ def stats_get():
     return stats.snapshot()
 
 
+@app.get("/auth")
+def auth_status():
+    from c0mr4de import auth
+    return {"hosts": auth.status()}
+
+
+@app.post("/auth")
+def auth_set(host: str = Body(..., embed=True), cookie: str = Body("", embed=True),
+             header: str = Body("", embed=True)):
+    from c0mr4de import auth
+    hdrs = {}
+    if header:
+        k, _, v = header.partition(":")
+        hdrs[k.strip()] = v.strip()
+    h = auth.set_auth(host, cookie=cookie, headers=hdrs)
+    return {"set": h, "hosts": auth.status()}
+
+
+@app.post("/auth/clear")
+def auth_clear(host: str = Body("", embed=True)):
+    from c0mr4de import auth
+    auth.clear_auth(host or None)
+    return {"hosts": auth.status()}
+
+
 # known free-tier limits, shown in settings (informational)
 _LIMITS = {
     "groq": "free: ~8k tokens/min, ~200k tokens/day (per model)",

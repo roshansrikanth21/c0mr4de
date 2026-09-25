@@ -46,12 +46,33 @@ def _guard(fn):
 
 @_guard
 def browser_navigate(url: str) -> str:
+    from urllib.parse import urlparse
+
+    from c0mr4de import auth
+
     page = _ensure_page()
+    authed = ""
+    a = auth.for_url(url)
+    if a:
+        parts = urlparse(url)
+        # operator-provided cookie -> load into the browser context so the page is logged in
+        if a.get("cookie"):
+            cookies = []
+            for pair in a["cookie"].split(";"):
+                if "=" in pair:
+                    n, val = pair.strip().split("=", 1)
+                    cookies.append({"name": n.strip(), "value": val.strip(), "domain": parts.hostname, "path": "/"})
+            if cookies:
+                page.context.add_cookies(cookies)
+                authed = "  [authenticated session]"
+        for k, v in a.get("headers", {}).items():
+            page.context.set_extra_http_headers({k: v})
+            authed = "  [authenticated session]"
     resp = page.goto(url, wait_until="domcontentloaded", timeout=20000)
     status = resp.status if resp else "?"
     title = page.title()
     text = page.inner_text("body")[:1500]
-    return f"navigated to {url}\nstatus: {status}\ntitle: {title}\nvisible text (first 1500):\n{text}"
+    return f"navigated to {url}{authed}\nstatus: {status}\ntitle: {title}\nvisible text (first 1500):\n{text}"
 
 
 @_guard

@@ -9,6 +9,7 @@ import shlex
 
 import httpx
 
+from c0mr4de import auth
 from c0mr4de.tools.base import Tool
 from c0mr4de.tools.recon import _run_in_kali
 
@@ -18,13 +19,24 @@ def http_request(url: str, method: str = "GET", headers: str = "{}", body: str =
         hdrs = json.loads(headers) if headers else {}
     except json.JSONDecodeError:
         return "ERROR: headers must be a JSON object string, e.g. '{\"Cookie\": \"a=b\"}'"
+    # Attach operator-provided session auth for this host, if any. Agent-supplied
+    # headers win on conflict, but a stored Cookie is merged in when absent.
+    a = auth.for_url(url)
+    authed = False
+    if a:
+        for k, v in a.get("headers", {}).items():
+            hdrs.setdefault(k, v)
+        if a.get("cookie") and not any(k.lower() == "cookie" for k in hdrs):
+            hdrs["Cookie"] = a["cookie"]
+            authed = True
+        authed = authed or bool(a.get("headers"))
     try:
         resp = httpx.request(method.upper(), url, headers=hdrs, content=body or None, timeout=20, follow_redirects=True)
     except httpx.HTTPError as exc:
         return f"REQUEST ERROR: {exc}"
     body_preview = resp.text[:3000]
     return (
-        f"status: {resp.status_code}\n"
+        f"status: {resp.status_code}{'  [authenticated session]' if authed else ''}\n"
         f"headers: {dict(resp.headers)}\n"
         f"body (first 3000 chars):\n{body_preview}"
     )
