@@ -49,7 +49,8 @@ EXPLOIT = AgentProfile(
         "a bypass you didn't demonstrate. Issue real tool calls; don't write code in a block."
     ),
     tool_names=["http_request", "decode_jwt", "tamper_jwt", "fuzz_param", "browser_navigate",
-                "browser_storage", "browser_eval", "sqlmap", "nikto", "consult_knowledge"],
+                "browser_storage", "browser_eval", "sqlmap", "nikto", "oob_start", "oob_poll",
+                "consult_knowledge"],
 )
 
 REPORT = AgentProfile(
