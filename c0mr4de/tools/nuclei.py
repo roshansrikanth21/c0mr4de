@@ -33,16 +33,22 @@ def _docker_image_present() -> bool:
 
 
 def _build_cmd(target: str, severity: str, tags: str) -> list[str] | None:
-    flags = ["-u", target, "-jsonl", "-silent", "-rate-limit", "50", "-timeout", "8"]
-    if severity:
-        flags += ["-severity", severity]
-    if tags:
-        flags += ["-tags", tags]
     if _have("nuclei"):
+        flags = ["-u", target, "-jsonl", "-silent", "-rate-limit", "50", "-timeout", "8"]
+        if severity:
+            flags += ["-severity", severity]
+        if tags:
+            flags += ["-tags", tags]
         return ["nuclei", *flags]
     if _have("docker") and _docker_image_present():
+        from c0mr4de.tools.dockerutil import ADD_HOST, docker_target
+        flags = ["-u", docker_target(target), "-jsonl", "-silent", "-rate-limit", "50", "-timeout", "8"]
+        if severity:
+            flags += ["-severity", severity]
+        if tags:
+            flags += ["-tags", tags]
         # cache templates in a named volume so they aren't re-downloaded every --rm run
-        return ["docker", "run", "--rm", "--network", "host",
+        return ["docker", "run", "--rm", *ADD_HOST,
                 "-v", "c0mr4de-nuclei-templates:/root/nuclei-templates", _IMAGE, *flags]
     return None
 

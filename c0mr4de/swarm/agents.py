@@ -35,8 +35,8 @@ RECON = AgentProfile(
         "non-prod/admin surface. Do NOT exploit anything - just discover and clearly summarise what you "
         "found and which spots look most promising to attack. Be thorough but fast; issue real tool calls."
     ),
-    tool_names=["fuzz_paths", "fuzz_param", "http_request", "browser_navigate", "browser_storage",
-                "whatweb", "nmap", "subfinder", "nuclei_scan", "consult_knowledge"],
+    tool_names=["crawl", "probe", "fuzz_paths", "fuzz_param", "http_request", "browser_navigate",
+                "browser_storage", "whatweb", "nmap", "subfinder", "nuclei_scan", "consult_knowledge"],
 )
 
 EXPLOIT = AgentProfile(
