@@ -65,7 +65,14 @@
   .sev.crit{background:var(--red);color:#1a1109} .sev.hi{background:#d98c4a;color:#1a1109}
   .sev.find{background:var(--green);color:#0f1a0f}
   .dossier .db{padding:12px 15px;white-space:pre-wrap;word-break:break-word;color:var(--text)}
-  .dossier .db .mono{background:#241d12;padding:1px 5px;border-radius:2px;color:var(--amber)}
+  .mono{background:#241d12;padding:1px 5px;border-radius:2px;color:var(--amber)}
+  .cb{background:#120f0a;border:1px solid var(--faint);border-radius:5px;padding:8px 10px;margin:6px 0;
+    white-space:pre-wrap;word-break:break-word;color:#c9b98f;font-size:11.5px}
+  .mdh{font-weight:700;color:var(--amber);margin:8px 0 3px;letter-spacing:.5px}
+  .mli{margin:1px 0 1px 6px}
+  .dossier .dh .cp{margin-left:auto;color:var(--muted);cursor:pointer;font-size:10px;border:1px solid var(--faint);border-radius:4px;padding:2px 7px}
+  .dossier .dh .cp:hover{color:var(--amber);border-color:var(--amber-dim)}
+  #send.stop{color:var(--red);border-color:#5a2f28} #send.stop:hover{background:#2a1512}
 
   .error{margin:10px 0;padding:10px 13px;border:1px solid #3a221c;border-left:3px solid var(--red);border-radius:6px;color:var(--red);white-space:pre-wrap}
 
@@ -197,6 +204,19 @@ const stTarget=document.getElementById('st-target'), stState=document.getElement
 let attachments=[], currentChat=null, tools=0;
 
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+// markdown-lite: escape first, then apply safe inline/block formatting (reports are markdown)
+function md(s){
+  let t=esc(s||'');
+  t=t.replace(/```([\s\S]*?)```/g,(m,c)=>`<pre class="cb">${c.trim()}</pre>`);
+  t=t.replace(/`([^`]+)`/g,'<span class="mono">$1</span>');
+  t=t.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+  t=t.replace(/^### (.+)$/gm,'<div class="mdh">$1</div>');
+  t=t.replace(/^## (.+)$/gm,'<div class="mdh">$1</div>');
+  t=t.replace(/^\s*[-*] (.+)$/gm,'<div class="mli">• $1</div>');
+  return t;
+}
+function copyBtn(text){const b=document.createElement('span');b.className='cp';b.textContent='copy';
+  b.onclick=e=>{e.stopPropagation();navigator.clipboard.writeText(text).then(()=>{b.textContent='copied';setTimeout(()=>b.textContent='copy',1200);});};return b;}
 function add(cls,html){const d=document.createElement('div');d.className=cls;d.innerHTML=html;inner.appendChild(d);feed.scrollTop=feed.scrollHeight;return d;}
 function targetFrom(t){const m=(t||'').match(/https?:\/\/[^\s'"]+|\b\d{1,3}(\.\d{1,3}){3}(:\d+)?/);return m?m[0]:'—';}
 function sevOf(t){if(/critical/i.test(t))return'crit';if(/high/i.test(t))return'hi';return'find';}
@@ -232,7 +252,9 @@ function infraToast(text){
 function dossier(label,text){
   const sev=sevOf(text); const cls=sev==='crit'?'crit':sev==='hi'?'hi':'';
   const badge=sev==='crit'?'<span class="sev crit">CRITICAL</span>':sev==='hi'?'<span class="sev hi">HIGH</span>':'<span class="sev find">CAPTURED</span>';
-  return add('dossier '+cls, `<div class="dh">${esc(label)} ${badge}</div><div class="db">${esc(text)}</div>`);
+  const el=add('dossier '+cls, `<div class="dh">${esc(label)} ${badge}</div><div class="db">${md(text)}</div>`);
+  el.querySelector('.dh').appendChild(copyBtn(text));
+  return el;
 }
 
 /* ---- chat management ---- */
@@ -285,14 +307,15 @@ async function openChat(id){
 
 /* ---- rendering an event (live or replayed) ---- */
 function renderEvent(kind,data){
-  if(kind==='thought') add('think',`<span class="p">[think]</span> ${esc(data.text)}`);
+  if(kind==='thought') add('think',`<span class="p">[think]</span> ${md(data.text)}`);
   else if(kind==='tool_call'){tools++;stTools.textContent=tools;add('tool',`<span class="b">→ ${esc(data.name)}</span> ${esc(argSum(data.arguments))}`);}
   else if(kind==='tool_result'){
     if(isFinding(data.result)){dossier('finding · '+data.name, data.result.slice(0,1400));stState.textContent='COMPROMISED';stState.className='st-comp';}
     else{add('res',esc(data.result.slice(0,800))); maybeInfra(data.result);}
   }
-  else if(kind==='finding') dossier('finding', data.text||'');
-  else if(kind==='final') dossier('report · summary', data.text);
+  else if(kind==='finding'){ if((data.text||'').trim()) dossier('finding', data.text); }
+  else if(kind==='final'){ if((data.text||'').trim()) dossier('report · summary', data.text);
+    else add('think','<span class="p">[done]</span> run finished with no written summary.'); }
   else if(kind==='error'){add('error',esc(data.text)); if(!maybeInfra(data.text)) toast({level:'err',title:'Run error',body:esc(data.text).slice(0,160)});}
 }
 const _shownToasts=new Set();
@@ -315,8 +338,13 @@ function toDataUrl(f){return new Promise(r=>{const x=new FileReader();x.onload=(
 
 /* ---- run ---- */
 newBtn.onclick=newChat;
-taskEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();go();}});
-sendBtn.addEventListener('click',go);
+let currentES=null, running=false;
+taskEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!running)go();}});
+taskEl.addEventListener('input',()=>{taskEl.style.height='auto';taskEl.style.height=Math.min(taskEl.scrollHeight,160)+'px';});
+sendBtn.addEventListener('click',()=>{ running ? stopRun() : go(); });
+function stopRun(){ if(currentChat) fetch('/stop/'+currentChat,{method:'POST'}); if(currentES) currentES.close(); endRun('stopped'); }
+function endRun(state){ running=false; sendBtn.classList.remove('stop'); sendBtn.textContent='run';
+  if(state&&stState.textContent==='running') stState.textContent=state; loadChats(); }
 
 async function go(){
   const task=taskEl.value.trim(); if(!task&&attachments.length===0)return;
@@ -327,16 +355,17 @@ async function go(){
   add('you',`<span class="p">operator&gt;</span> ${esc(task)}${ah}`);
   _shownToasts.clear();
   stTarget.textContent=targetFrom(full); stState.textContent='running'; stState.className='';
-  taskEl.value='';attachments=[];filesLabel.textContent='';
-  sendBtn.disabled=true;sendBtn.innerHTML='<span class="spin"></span>';
+  taskEl.value='';taskEl.style.height='auto';attachments=[];filesLabel.textContent='';
+  running=true; sendBtn.classList.add('stop'); sendBtn.textContent='stop';
 
   const es=new EventSource('/run?chat_id='+encodeURIComponent(currentChat)+'&task='+encodeURIComponent(full));
+  currentES=es;
   es.onmessage=ev=>{const {kind,data}=JSON.parse(ev.data);
     if(kind==='backend'){backendEl.textContent=data.name.replace('rotating:','').replace(/openai-compat:|ollama:/g,'');}
-    else if(kind==='done'){es.close();sendBtn.disabled=false;sendBtn.textContent='run';if(stState.textContent==='running'){stState.textContent='done';}loadChats();}
+    else if(kind==='done'){es.close();endRun('done');}
     else renderEvent(kind,data);
   };
-  es.onerror=()=>{es.close();sendBtn.disabled=false;sendBtn.textContent='run';};
+  es.onerror=()=>{es.close();endRun('');};
 }
 loadChats();
 </script>

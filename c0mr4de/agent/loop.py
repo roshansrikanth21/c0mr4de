@@ -60,7 +60,8 @@ class StepLog:
 
 
 class AgentLoop:
-    def __init__(self, backend: Backend, tools: ToolRegistry, max_steps: int = 25, verbose: bool = True, on_event=None):
+    def __init__(self, backend: Backend, tools: ToolRegistry, max_steps: int = 25, verbose: bool = True,
+                 on_event=None, should_stop=None):
         self.backend = backend
         self.tools = tools
         self.max_steps = max_steps
@@ -69,6 +70,8 @@ class AgentLoop:
         # on_event(kind, data): fired for live UIs. kinds: "thought", "tool_call",
         # "tool_result", "final". Optional - None means no streaming.
         self.on_event = on_event or (lambda kind, data: None)
+        # should_stop(): return True to cancel the run (operator hit Stop).
+        self.should_stop = should_stop or (lambda: False)
 
     def run(self, task: str) -> str:
         # Auto-inject relevant playbook/vault knowledge up front rather than
@@ -98,6 +101,9 @@ class AgentLoop:
         wrapup_sent = False
 
         for step in range(1, self.max_steps + 1):
+            if self.should_stop():
+                self.on_event("final", {"text": "Run stopped by operator."})
+                return "Run stopped by operator."
             # Near the step cap, tell the model to wrap up and report, so a run
             # never just dies at the limit with nothing written (the m1rage run
             # hit the cap mid-recon and produced no report).

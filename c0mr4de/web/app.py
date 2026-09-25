@@ -133,11 +133,27 @@ def settings_get():
             "tool_count": len(registry.names())}
 
 
+# active runs, keyed by chat_id, so a Stop button can cancel them
+_cancel: dict[str, threading.Event] = {}
+
+
+@app.post("/stop/{chat_id}")
+def stop_run(chat_id: str):
+    ev = _cancel.get(chat_id)
+    if ev:
+        ev.set()
+        return {"stopping": True}
+    return {"stopping": False}
+
+
 @app.get("/run")
 def run(task: str, chat_id: str = ""):
     """Stream the agent's steps as Server-Sent Events, within a conversation."""
     events: queue.Queue = queue.Queue()
     collected: list = []
+    cancel = threading.Event()
+    if chat_id:
+        _cancel[chat_id] = cancel
 
     def on_event(kind, data):
         events.put({"kind": kind, "data": data})
@@ -152,7 +168,8 @@ def run(task: str, chat_id: str = ""):
             full_task = f"{task}\n\n[earlier in this session]\n{recap}" if recap else task
             backend = _load_backend()
             registry = build_default_registry()
-            loop = AgentLoop(backend=backend, tools=registry, verbose=False, on_event=on_event)
+            loop = AgentLoop(backend=backend, tools=registry, verbose=False,
+                             on_event=on_event, should_stop=cancel.is_set)
             events.put({"kind": "backend", "data": {"name": backend.name, "tools": registry.names()}})
             result = loop.run(full_task)
             if chat_id:
@@ -160,6 +177,7 @@ def run(task: str, chat_id: str = ""):
         except Exception as exc:  # noqa: BLE001
             events.put({"kind": "error", "data": {"text": str(exc)}})
         finally:
+            _cancel.pop(chat_id, None)
             events.put({"kind": "done", "data": {}})
 
     threading.Thread(target=worker, daemon=True).start()
