@@ -43,6 +43,9 @@ def main() -> None:
         p.add_argument("--auth-host", default="", help="Host you're authorized to test as a logged-in user")
         p.add_argument("--auth-cookie", default="", help="Session cookie for --auth-host, e.g. 'session=abc; csrf=xyz'")
         p.add_argument("--auth-header", default="", help="Auth header for --auth-host, e.g. 'Authorization: Bearer ...'")
+        p.add_argument("--in-scope", default="", help="Comma-separated in-scope hosts (rules of engagement)")
+        p.add_argument("--out-scope", default="", help="Comma-separated out-of-scope hosts (blocked)")
+        p.add_argument("--focus", default="", help="Preferred vuln classes, e.g. 'IDOR, SSRF, business logic'")
 
     ingest_p = sub.add_parser("ingest", help="Ingest the Obsidian vault + playbooks into the knowledge store")
     ingest_p.add_argument("--vault", type=Path, default=None)
@@ -54,6 +57,9 @@ def main() -> None:
     swarm_p.add_argument("--auth-host", default="")
     swarm_p.add_argument("--auth-cookie", default="")
     swarm_p.add_argument("--auth-header", default="")
+    swarm_p.add_argument("--in-scope", default="")
+    swarm_p.add_argument("--out-scope", default="")
+    swarm_p.add_argument("--focus", default="")
 
     args = parser.parse_args()
 
@@ -66,6 +72,15 @@ def main() -> None:
             hdrs[k.strip()] = v.strip()
         auth.set_auth(args.auth_host, cookie=getattr(args, "auth_cookie", ""), headers=hdrs)
         print(f"[auth] session set for {args.auth_host} — tools will operate as the logged-in user there")
+
+    # apply rules of engagement / scope
+    if getattr(args, "in_scope", "") or getattr(args, "out_scope", "") or getattr(args, "focus", ""):
+        from c0mr4de import scope
+        scope.set_scope(
+            in_scope=[s for s in getattr(args, "in_scope", "").split(",") if s.strip()],
+            out_of_scope=[s for s in getattr(args, "out_scope", "").split(",") if s.strip()],
+            focus=getattr(args, "focus", ""))
+        print("[scope] rules of engagement set — out-of-scope hosts will be blocked")
 
     if args.command == "swarm":
         from c0mr4de.swarm.orchestrator import Swarm

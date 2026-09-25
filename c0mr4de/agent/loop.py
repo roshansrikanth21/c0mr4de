@@ -88,8 +88,11 @@ class AgentLoop:
         except Exception as exc:  # noqa: BLE001
             knowledge = f"(knowledge base unavailable this run: {exc})"
         knowledge = knowledge[:1400]  # cap so the first turn stays under free-tier TPM limits
+        from c0mr4de import scope
+        roe = scope.brief()
         primed_task = (
-            f"{task}\n\n"
+            (f"{roe}\n\n" if roe else "")
+            + f"{task}\n\n"
             f"--- Relevant knowledge auto-retrieved for this task (already consulted, no need to call "
             f"consult_knowledge again for this exact question - call it again only if you need something "
             f"more specific as you go) ---\n{knowledge}"

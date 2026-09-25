@@ -15,6 +15,9 @@ from c0mr4de.tools.recon import _run_in_kali
 
 
 def http_request(url: str, method: str = "GET", headers: str = "{}", body: str = "") -> str:
+    from c0mr4de import scope
+    if scope.check(url) == "out":
+        return f"BLOCKED: {url} is OUT OF SCOPE per the rules of engagement. Do not test it."
     try:
         hdrs = json.loads(headers) if headers else {}
     except json.JSONDecodeError:
