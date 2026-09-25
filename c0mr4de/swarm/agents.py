@@ -36,7 +36,7 @@ RECON = AgentProfile(
         "found and which spots look most promising to attack. Be thorough but fast; issue real tool calls."
     ),
     tool_names=["fuzz_paths", "fuzz_param", "http_request", "browser_navigate", "browser_storage",
-                "whatweb", "nmap", "subfinder", "consult_knowledge"],
+                "whatweb", "nmap", "subfinder", "nuclei_scan", "consult_knowledge"],
 )
 
 EXPLOIT = AgentProfile(
