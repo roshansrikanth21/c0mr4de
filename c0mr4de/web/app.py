@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import queue
+import re
 import threading
 from pathlib import Path
 
@@ -146,9 +147,14 @@ def stop_run(chat_id: str):
     return {"stopping": False}
 
 
+def _extract_target(text: str) -> str:
+    m = re.search(r"https?://[^\s'\"]+|\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?", text or "")
+    return m.group(0) if m else text[:60]
+
+
 @app.get("/run")
-def run(task: str, chat_id: str = ""):
-    """Stream the agent's steps as Server-Sent Events, within a conversation."""
+def run(task: str, chat_id: str = "", mode: str = "agent"):
+    """Stream steps as SSE. mode='agent' (single loop) or 'swarm' (recon->exploit->report)."""
     events: queue.Queue = queue.Queue()
     collected: list = []
     cancel = threading.Event()
@@ -157,21 +163,28 @@ def run(task: str, chat_id: str = ""):
 
     def on_event(kind, data):
         events.put({"kind": kind, "data": data})
-        if kind in ("thought", "tool_call", "tool_result", "final", "finding"):
+        if kind in ("thought", "tool_call", "tool_result", "final", "finding", "agent_start", "agent_done"):
             collected.append({"kind": kind, "data": data})
 
     def worker():
         try:
             if chat_id:
                 chats.append_turn(chat_id, "user", task)
-            recap = chats.prior_context(chat_id) if chat_id else ""
-            full_task = f"{task}\n\n[earlier in this session]\n{recap}" if recap else task
             backend = _load_backend()
-            registry = build_default_registry()
-            loop = AgentLoop(backend=backend, tools=registry, verbose=False,
-                             on_event=on_event, should_stop=cancel.is_set)
-            events.put({"kind": "backend", "data": {"name": backend.name, "tools": registry.names()}})
-            result = loop.run(full_task)
+            events.put({"kind": "backend", "data": {"name": backend.name}})
+            if mode == "swarm":
+                from c0mr4de.swarm.orchestrator import Swarm
+                bb = Swarm(backend=backend, on_event=on_event, should_stop=cancel.is_set).run(
+                    _extract_target(task), task)
+                result = f"Swarm complete — {len(bb.findings)} finding(s) across recon/exploit/report."
+                events.put({"kind": "final", "data": {"text": result}})
+            else:
+                recap = chats.prior_context(chat_id) if chat_id else ""
+                full_task = f"{task}\n\n[earlier in this session]\n{recap}" if recap else task
+                registry = build_default_registry()
+                loop = AgentLoop(backend=backend, tools=registry, verbose=False,
+                                 on_event=on_event, should_stop=cancel.is_set)
+                result = loop.run(full_task)
             if chat_id:
                 chats.append_turn(chat_id, "summary", result, collected)
         except Exception as exc:  # noqa: BLE001
@@ -192,6 +205,17 @@ def run(task: str, chat_id: str = ""):
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
+@app.get("/osint/latest")
+def osint_latest():
+    """Path of the most recent OSINT graph, for the UI to embed."""
+    d = WORKSPACE / "osint"
+    files = sorted(d.glob("*.html"), key=lambda f: f.stat().st_mtime, reverse=True) if d.exists() else []
+    return {"graph": f"/osint-files/{files[0].name}" if files else None}
+
+
+_OSINT_DIR = WORKSPACE / "osint"
+_OSINT_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/osint-files", StaticFiles(directory=str(_OSINT_DIR)), name="osint")
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
 

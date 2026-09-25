@@ -74,6 +74,23 @@
   .dossier .dh .cp:hover{color:var(--amber);border-color:var(--amber-dim)}
   #send.stop{color:var(--red);border-color:#5a2f28} #send.stop:hover{background:#2a1512}
 
+  /* composer controls: mode toggle + osint */
+  .ctrls{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .modes{display:inline-flex;border:1px solid var(--faint);border-radius:7px;overflow:hidden}
+  .mode{background:transparent;border:none;color:var(--muted);padding:5px 13px;cursor:pointer;font-family:var(--mono);font-size:11.5px}
+  .mode.on{background:#241d12;color:var(--amber)}
+  .ghost{background:transparent;border:1px solid var(--faint);color:var(--muted);border-radius:7px;padding:5px 12px;cursor:pointer;font-family:var(--mono);font-size:11.5px}
+  .ghost:hover{color:var(--amber);border-color:var(--amber-dim)}
+  /* swarm phase divider */
+  .phase{margin:16px 0 6px;padding:6px 12px;border-left:3px solid var(--amber);background:#221a10;
+    border-radius:5px;color:var(--amber);letter-spacing:1.5px;font-size:11px;text-transform:uppercase;font-weight:700}
+  .phase .sub{color:var(--muted);font-weight:400;letter-spacing:0;text-transform:none;margin-left:8px}
+  /* osint graph overlay */
+  #gov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:320;display:none}
+  #gov.on{display:block}
+  #gframe{position:absolute;inset:40px;border:1px solid var(--faint);border-radius:10px;width:calc(100% - 80px);height:calc(100% - 80px);background:var(--bg)}
+  #gclose{position:absolute;right:24px;top:14px;color:var(--text);font-size:22px;cursor:pointer;z-index:321}
+
   .error{margin:10px 0;padding:10px 13px;border:1px solid #3a221c;border-left:3px solid var(--red);border-radius:6px;color:var(--red);white-space:pre-wrap}
 
   /* status bar */
@@ -176,6 +193,10 @@
   <footer>
     <div id="drop">drop a screenshot or file, or click to pick <div class="files"></div></div>
     <input type="file" id="picker" multiple hidden />
+    <div class="ctrls">
+      <span class="modes"><button class="mode on" data-mode="agent">agent</button><button class="mode" data-mode="swarm">swarm</button></span>
+      <button class="ghost" id="osintBtn">◈ osint graph</button>
+    </div>
     <div class="inputrow">
       <textarea id="task" rows="1" placeholder="operator> pentest http://localhost:3000, chain vulns, report"></textarea>
       <button id="send">run</button>
@@ -194,6 +215,8 @@
       <div id="toolbox" style="color:var(--muted);font-size:11.5px;line-height:1.7"></div>
     </div>
   </div></div>
+
+  <div id="gov"><span id="gclose">×</span><iframe id="gframe"></iframe></div>
 
 <script>
 const inner=document.getElementById('inner'), feed=document.getElementById('feed');
@@ -307,7 +330,10 @@ async function openChat(id){
 
 /* ---- rendering an event (live or replayed) ---- */
 function renderEvent(kind,data){
-  if(kind==='thought') add('think',`<span class="p">[think]</span> ${md(data.text)}`);
+  const ag=data.agent?`<span style="color:var(--muted)">[${esc(data.agent)}]</span> `:'';
+  if(kind==='agent_start'){const roles={recon:'mapping the attack surface',exploit:'exploiting & chaining',report:'writing the report'};add('phase',`▸ ${esc(data.agent)} specialist<span class="sub">${roles[data.agent]||''}</span>`);return;}
+  if(kind==='agent_done')return;
+  if(kind==='thought') add('think',`<span class="p">[think]</span> ${ag}${md(data.text)}`);
   else if(kind==='tool_call'){tools++;stTools.textContent=tools;add('tool',`<span class="b">→ ${esc(data.name)}</span> ${esc(argSum(data.arguments))}`);}
   else if(kind==='tool_result'){
     if(isFinding(data.result)){dossier('finding · '+data.name, data.result.slice(0,1400));stState.textContent='COMPROMISED';stState.className='st-comp';}
@@ -338,7 +364,21 @@ function toDataUrl(f){return new Promise(r=>{const x=new FileReader();x.onload=(
 
 /* ---- run ---- */
 newBtn.onclick=newChat;
-let currentES=null, running=false;
+let currentES=null, running=false, runMode='agent';
+document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.mode').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); runMode=b.dataset.mode;
+  taskEl.placeholder = runMode==='swarm' ? 'operator> target for the swarm — recon → exploit → report' : 'operator> pentest http://localhost:3000, chain vulns, report';
+});
+// OSINT graph viewer
+const gov=document.getElementById('gov'), gframe=document.getElementById('gframe');
+document.getElementById('gclose').onclick=()=>{gov.classList.remove('on');gframe.src='about:blank';};
+gov.onclick=e=>{if(e.target===gov){gov.classList.remove('on');gframe.src='about:blank';}};
+document.getElementById('osintBtn').onclick=async()=>{
+  const j=await fetch('/osint/latest').then(r=>r.json());
+  if(!j.graph){toast({title:'No OSINT graph yet',body:'Run an OSINT task (e.g. "osint the username <handle>") — the agent builds the graph, then view it here.'});return;}
+  gframe.src=j.graph; gov.classList.add('on');
+};
 taskEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(!running)go();}});
 taskEl.addEventListener('input',()=>{taskEl.style.height='auto';taskEl.style.height=Math.min(taskEl.scrollHeight,160)+'px';});
 sendBtn.addEventListener('click',()=>{ running ? stopRun() : go(); });
@@ -358,7 +398,7 @@ async function go(){
   taskEl.value='';taskEl.style.height='auto';attachments=[];filesLabel.textContent='';
   running=true; sendBtn.classList.add('stop'); sendBtn.textContent='stop';
 
-  const es=new EventSource('/run?chat_id='+encodeURIComponent(currentChat)+'&task='+encodeURIComponent(full));
+  const es=new EventSource('/run?mode='+runMode+'&chat_id='+encodeURIComponent(currentChat)+'&task='+encodeURIComponent(full));
   currentES=es;
   es.onmessage=ev=>{const {kind,data}=JSON.parse(ev.data);
     if(kind==='backend'){backendEl.textContent=data.name.replace('rotating:','').replace(/openai-compat:|ollama:/g,'');}
