@@ -61,11 +61,12 @@ class StepLog:
 
 class AgentLoop:
     def __init__(self, backend: Backend, tools: ToolRegistry, max_steps: int = 25, verbose: bool = True,
-                 on_event=None, should_stop=None):
+                 on_event=None, should_stop=None, system_prompt: str | None = None):
         self.backend = backend
         self.tools = tools
         self.max_steps = max_steps
         self.verbose = verbose
+        self.system_prompt = system_prompt or SYSTEM_PROMPT
         self.log: list[StepLog] = []
         # on_event(kind, data): fired for live UIs. kinds: "thought", "tool_call",
         # "tool_result", "final". Optional - None means no streaming.
@@ -118,7 +119,7 @@ class AgentLoop:
                     ),
                 })
             _t0 = time.time()
-            response = self.backend.generate(SYSTEM_PROMPT, _trim_history(messages), tools=tool_schemas)
+            response = self.backend.generate(self.system_prompt, _trim_history(messages), tools=tool_schemas)
             _served = getattr(self.backend, "_last_used", self.backend).name
             stats.record(_served, response.usage.get("input_tokens", 0),
                          response.usage.get("output_tokens", 0), time.time() - _t0)
