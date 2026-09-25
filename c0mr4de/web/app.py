@@ -115,6 +115,28 @@ def auth_clear(host: str = Body("", embed=True)):
     return {"hosts": auth.status()}
 
 
+@app.get("/scope")
+def scope_get():
+    from c0mr4de import scope
+    return {"brief": scope.brief()}
+
+
+@app.post("/scope")
+def scope_set(in_scope: str = Body("", embed=True), out_scope: str = Body("", embed=True),
+              focus: str = Body("", embed=True)):
+    from c0mr4de import scope
+    scope.set_scope(in_scope=[s for s in in_scope.split(",") if s.strip()],
+                    out_of_scope=[s for s in out_scope.split(",") if s.strip()], focus=focus)
+    return {"brief": scope.brief()}
+
+
+@app.post("/scope/clear")
+def scope_clear():
+    from c0mr4de import scope
+    scope.clear_scope()
+    return {"brief": ""}
+
+
 # known free-tier limits, shown in settings (informational)
 _LIMITS = {
     "groq": "free: ~8k tokens/min, ~200k tokens/day (per model)",

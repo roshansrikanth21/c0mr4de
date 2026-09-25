@@ -164,9 +164,9 @@
   .stat{display:grid;grid-template-columns:1fr auto auto auto;gap:4px 14px;font-size:11.5px;padding:6px 4px;border-bottom:1px solid var(--faint)}
   .stat.hd{color:var(--muted);font-size:10px;letter-spacing:1px;text-transform:uppercase}
   .stat .n{color:var(--text)} .stat .v{color:var(--amber);text-align:right}
-  #authbox input{width:100%;background:var(--bg);border:1px solid var(--faint);color:var(--text);
+  #authbox input, #scopebox input{width:100%;background:var(--bg);border:1px solid var(--faint);color:var(--text);
     border-radius:6px;padding:7px 10px;font-family:var(--mono);font-size:11.5px;margin:4px 0}
-  #authbox input:focus{outline:none;border-color:var(--amber-dim)}
+  #authbox input:focus, #scopebox input:focus{outline:none;border-color:var(--amber-dim)}
   .authpill{display:inline-block;background:#1e3320;color:var(--green);border-radius:10px;padding:2px 9px;font-size:10.5px;margin:3px 4px 0 0}
 </style>
 </head>
@@ -221,6 +221,15 @@
         <input id="authHeader" placeholder="header (optional), e.g. Authorization: Bearer ..." />
         <div style="display:flex;gap:8px;margin-top:6px"><button class="ghost" id="authSet">set session</button><button class="ghost" id="authClear">clear all</button></div>
         <div id="authList" style="color:var(--muted);font-size:11px;margin-top:8px"></div>
+      </div>
+      <h5>Rules of engagement <span style="color:var(--muted)">· scope</span></h5>
+      <div id="scopebox">
+        <div style="color:var(--muted);font-size:11px;margin-bottom:7px">Out-of-scope hosts are hard-blocked; the focus + scope are injected into the agent every run.</div>
+        <input id="scIn" placeholder="in scope (comma-separated hosts)" />
+        <input id="scOut" placeholder="out of scope (blocked)" />
+        <input id="scFocus" placeholder="focus, e.g. IDOR, SSRF, business logic" />
+        <div style="display:flex;gap:8px;margin-top:6px"><button class="ghost" id="scSet">set scope</button><button class="ghost" id="scClear">clear</button></div>
+        <div id="scCur" style="color:var(--muted);font-size:11px;margin-top:8px;white-space:pre-wrap"></div>
       </div>
       <h5>Efficiency <span style="color:var(--muted)">· this run session</span></h5>
       <div id="statsbox"></div>
@@ -327,6 +336,7 @@ async function openSettings(){
     : '<div style="color:var(--muted);font-size:11.5px">No calls yet this session — run a task to see per-model tokens & latency.</div>';
   document.getElementById('toolbox').textContent = `${s.tool_count} tools: ` + s.tools.join(', ');
   renderAuthList(st._authhosts || (await fetch('/auth').then(r=>r.json())).hosts);
+  loadScope();
 }
 function renderAuthList(hosts){
   const el=document.getElementById('authList');
@@ -340,6 +350,14 @@ document.getElementById('authSet').onclick=async()=>{
   document.getElementById('authCookie').value=''; document.getElementById('authHeader').value='';
 };
 document.getElementById('authClear').onclick=async()=>{const r=await fetch('/auth/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());renderAuthList(r.hosts);};
+// scope / rules of engagement
+async function loadScope(){const j=await fetch('/scope').then(r=>r.json());document.getElementById('scCur').textContent=j.brief||'no scope set — nothing blocked.';}
+document.getElementById('scSet').onclick=async()=>{
+  const j=await fetch('/scope',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({in_scope:document.getElementById('scIn').value,out_scope:document.getElementById('scOut').value,focus:document.getElementById('scFocus').value})}).then(r=>r.json());
+  document.getElementById('scCur').textContent=j.brief||'no scope set.'; toast({title:'Rules of engagement set',body:'Out-of-scope hosts will be blocked.'});
+};
+document.getElementById('scClear').onclick=async()=>{await fetch('/scope/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});loadScope();};
 async function newChat(){const r=await fetch('/chats/new',{method:'POST'});const c=await r.json();currentChat=c.id;resetFeed();await loadChats();}
 function resetFeed(){inner.innerHTML='';tools=0;stTools.textContent='0';stTarget.textContent='—';stState.textContent='idle';stState.className='';add('intro','operator&gt; new session. describe a task.');}
 async function openChat(id){
