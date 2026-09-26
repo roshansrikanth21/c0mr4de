@@ -37,5 +37,12 @@ class VectorStore:
             )
         return out
 
+    def delete(self, ids: list[str] | None = None, where: dict | None = None) -> None:
+        """Remove documents by id or metadata filter (e.g. where={'source': 'writeup-live'})."""
+        if ids:
+            self._collection.delete(ids=ids)
+        if where:
+            self._collection.delete(where=where)
+
     def count(self) -> int:
         return self._collection.count()

@@ -43,16 +43,32 @@ MIN_CHARS = 200        # below this it's a nav stub / near-empty - not worth a c
 MAX_CHARS = 40_000     # cap one file so a giant dump can't dominate retrieval
 
 # Category tag from path, so retrieval and provenance survive the flattening.
+# NOTE: matched against whole path TOKENS (exact first, then >=4-char substring),
+# never bare substrings - a short key like "re" must not match "Request".
 _CATEGORIES = {
-    "pwn": "pwn", "binary": "pwn", "exploit": "pwn",
-    "web": "web",
-    "crypto": "crypto",
-    "forensic": "forensics", "stego": "forensics",
-    "rev": "reversing", "reverse": "reversing", "re": "reversing",
-    "osint": "osint",
-    "misc": "misc", "jail": "misc",
-    "mobile": "mobile", "android": "mobile",
+    # web + the many vuln-class dir names a bug-bounty repo is mostly made of
+    "web": "web", "xss": "web", "sql": "web", "sqli": "web", "nosql": "web",
+    "ssrf": "web", "csrf": "web", "xxe": "web", "ssti": "web", "lfi": "web",
+    "rfi": "web", "idor": "web", "cors": "web", "jwt": "web", "oauth": "web",
+    "saml": "web", "graphql": "web", "injection": "web", "traversal": "web",
+    "deserialization": "web", "upload": "web", "redirect": "web", "template": "web",
+    "prototype": "web", "smuggling": "web", "crlf": "web", "clickjacking": "web",
+    "ldap": "web", "xpath": "web", "api": "web",
+    # binary / pwn
+    "pwn": "pwn", "binary": "pwn", "heap": "pwn", "rop": "pwn", "bof": "pwn",
+    # crypto
+    "crypto": "crypto", "cryptography": "crypto", "rsa": "crypto", "aes": "crypto",
+    # forensics
+    "forensic": "forensics", "forensics": "forensics", "stego": "forensics",
+    "steganography": "forensics",
+    # reversing (no bare "re" - too ambiguous)
+    "rev": "reversing", "reverse": "reversing", "reversing": "reversing",
+    "ghidra": "reversing", "decompil": "reversing", "disassembl": "reversing",
+    # everything else
+    "osint": "osint", "recon": "recon", "misc": "misc", "jail": "misc",
+    "mobile": "mobile", "android": "mobile", "ios": "mobile",
     "hardware": "hardware", "network": "network",
+    "cloud": "cloud", "aws": "cloud", "azure": "cloud", "kubernetes": "cloud",
 }
 
 # Cleaning patterns.
@@ -64,10 +80,13 @@ _MANY_BLANKS = re.compile(r"\n{3,}")
 
 
 def _category_for(rel: Path) -> str:
-    parts = [p.lower() for p in rel.parts]
-    joined = " ".join(parts)
-    for key, cat in _CATEGORIES.items():
-        if any(key == p or key in p for p in parts) or key in joined:
+    tokens = [t for t in re.split(r"[^a-z0-9]+", rel.as_posix().lower()) if t]
+    tokset = set(tokens)
+    for key, cat in _CATEGORIES.items():   # exact whole-token match wins
+        if key in tokset:
+            return cat
+    for key, cat in _CATEGORIES.items():   # then a >=4-char substring of a token
+        if len(key) >= 4 and any(key in t for t in tokens):
             return cat
     return "unsorted"
 

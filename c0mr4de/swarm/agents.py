@@ -50,7 +50,7 @@ EXPLOIT = AgentProfile(
     ),
     tool_names=["http_request", "decode_jwt", "tamper_jwt", "fuzz_param", "browser_navigate",
                 "browser_storage", "browser_eval", "sqlmap", "nikto", "oob_start", "oob_poll",
-                "consult_knowledge"],
+                "consult_knowledge", "search_writeups", "fetch_writeup"],
 )
 
 REPORT = AgentProfile(

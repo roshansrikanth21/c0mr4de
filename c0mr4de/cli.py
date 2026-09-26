@@ -49,6 +49,9 @@ def main() -> None:
 
     ingest_p = sub.add_parser("ingest", help="Ingest the Obsidian vault + playbooks into the knowledge store")
     ingest_p.add_argument("--vault", type=Path, default=None)
+    ingest_p.add_argument("--playbooks", type=Path, default=None)
+    ingest_p.add_argument("--sources", type=Path, nargs="*", default=[],
+                          help="Extra markdown source folders to ingest (e.g. a prepped writeup corpus)")
 
     prep_p = sub.add_parser("prep-writeups",
                             help="Strip a downloaded writeup repo to clean text ready for --sources ingestion")
@@ -116,9 +119,9 @@ def main() -> None:
         return
 
     if args.command == "ingest":
-        from c0mr4de.memory.ingest import main as ingest_main
+        from c0mr4de.memory.ingest import run_ingest
 
-        ingest_main()
+        run_ingest(vault=args.vault, playbooks=args.playbooks, sources=list(args.sources))
         return
 
     if args.command == "prep-writeups":

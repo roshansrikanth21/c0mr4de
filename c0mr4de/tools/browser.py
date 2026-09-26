@@ -75,6 +75,27 @@ def browser_navigate(url: str) -> str:
     return f"navigated to {url}{authed}\nstatus: {status}\ntitle: {title}\nvisible text (first 1500):\n{text}"
 
 
+def render_page_text(url: str, wait_ms: int = 3500, max_chars: int = 20000) -> tuple[str, str]:
+    """Render a URL in the real headless browser and return (title, text). Used as
+    the last-resort fetch for pages behind a lightweight JS/Cloudflare challenge
+    that raw HTTP can't pass (e.g. Medium/infosecwriteups). Raises on failure so
+    the caller can fall through. Not a Tool - an internal helper for writeups.py."""
+    page = _ensure_page()
+    page.goto(url, wait_until="domcontentloaded", timeout=25000)
+    page.wait_for_timeout(wait_ms)  # let a JS challenge resolve / content hydrate
+    title = page.title()
+    if "just a moment" in title.lower() or "attention required" in title.lower():
+        page.wait_for_timeout(4000)  # give the challenge a second pass
+        title = page.title()
+    try:
+        text = page.inner_text("article")
+    except Exception:  # noqa: BLE001
+        text = ""
+    if len(text) < 400:
+        text = page.inner_text("body")
+    return title, text[:max_chars]
+
+
 @_guard
 def browser_storage() -> str:
     page = _ensure_page()

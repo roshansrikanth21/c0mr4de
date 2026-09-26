@@ -50,6 +50,22 @@ def ingest_directory(store: VectorStore, root: Path, source_label: str) -> int:
     return count
 
 
+def run_ingest(vault: Path | None = None, playbooks: Path | None = None,
+               sources: list[Path] | None = None) -> None:
+    """Ingest the vault + playbooks (+ any extra --sources folders). Reusable by
+    the CLI so `c0mr4de ingest --sources <dir>` and the module entry share logic."""
+    vault = vault or DEFAULT_OBSIDIAN_VAULT
+    playbooks = playbooks or DEFAULT_PLAYBOOKS_DIR
+    store = VectorStore()
+    n1 = ingest_directory(store, vault, "obsidian")
+    n2 = ingest_directory(store, playbooks, "playbook")
+    print(f"ingested {n1} chunks from vault, {n2} chunks from playbooks")
+    for extra in (sources or []):
+        n = ingest_directory(store, extra, f"source:{extra.name}")
+        print(f"ingested {n} chunks from {extra}")
+    print(f"total chunks in store: {store.count()}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest Obsidian vault + playbooks into the local vector store")
     parser.add_argument("--vault", type=Path, default=DEFAULT_OBSIDIAN_VAULT)
@@ -63,15 +79,7 @@ def main() -> None:
         "HackTricks exports, your own writeups here and re-run to grow the knowledge base.",
     )
     args = parser.parse_args()
-
-    store = VectorStore()
-    n1 = ingest_directory(store, args.vault, "obsidian")
-    n2 = ingest_directory(store, args.playbooks, "playbook")
-    print(f"ingested {n1} chunks from vault, {n2} chunks from playbooks")
-    for extra in args.sources:
-        n = ingest_directory(store, extra, f"source:{extra.name}")
-        print(f"ingested {n} chunks from {extra}")
-    print(f"total chunks in store: {store.count()}")
+    run_ingest(vault=args.vault, playbooks=args.playbooks, sources=list(args.sources))
 
 
 if __name__ == "__main__":
