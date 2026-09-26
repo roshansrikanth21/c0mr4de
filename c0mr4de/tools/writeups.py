@@ -35,7 +35,9 @@ _READER_PROXY = "https://r.jina.ai/"  # returns clean text/markdown for a URL, n
 # Primary source is the one the operator asked for; the rest broaden the net when
 # infosecwriteups is thin on a given challenge.
 PRIMARY_SITE = "infosecwriteups.com"
-_BROADEN_SITES = ["ctftime.org", "github.com", "medium.com", "hackmd.io"]
+# pentester.land is a curated bug-bounty writeup aggregator (static site, not
+# Cloudflare-walled, so fetch works); ctftime for CTF, github/hackmd/blogs for the rest.
+_BROADEN_SITES = ["pentester.land", "ctftime.org", "github.com", "medium.com", "hackmd.io"]
 
 
 def _ddg(query: str, limit: int = 10) -> list[tuple[str, str]]:
