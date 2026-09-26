@@ -14,7 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from c0mr4de.agent.backends import (  # noqa: E402
     Backend, LLMResponse, RotatingBackend, _extract_fallback_tool_call, _is_rate_limit,
 )
-from c0mr4de.agent.loop import _trim_history, _looks_like_unexecuted_plan  # noqa: E402
+from c0mr4de.agent.loop import _trim_history, _looks_like_unexecuted_plan, StepLog  # noqa: E402
+from c0mr4de.agent.supervisor import Supervisor  # noqa: E402
 from c0mr4de.tools.web import decode_jwt, tamper_jwt  # noqa: E402
 from c0mr4de.engagement import _fingerprint_stack  # noqa: E402
 
@@ -109,6 +110,30 @@ def test_fingerprint_stack():
     assert "Next.js" in _fingerprint_stack("has Next-Action header and _next/static")
     assert "Juice Shop" in _fingerprint_stack("GET /rest/products returned")
     assert _fingerprint_stack("totally generic text") == []
+
+
+def test_supervisor_catches_loop_and_stuck():
+    # identical tool call two steps running -> steer (loop)
+    s = Supervisor()
+    log = [StepLog(1, "", ['http_request({"url":"x"})'], ["200"]),
+           StepLog(2, "", ['http_request({"url":"x"})'], ["200"])]
+    v = s.review(log)
+    assert v and v[0] == "steer"
+    # distinct tools but all erroring two steps running -> steer (stuck)
+    s = Supervisor()
+    log = [StepLog(1, "", ["probe(...)"], ["httpx not available"]),
+           StepLog(2, "", ["naabu(...)"], ["naabu not available"])]
+    v = s.review(log)
+    assert v and v[0] == "steer"
+    # healthy progress -> no intervention
+    s = Supervisor()
+    log = [StepLog(1, "", ["crawl(...)"], ["found 12 endpoints"]),
+           StepLog(2, "", ["probe(...)"], ["200 ok"])]
+    assert s.review(log) is None
+    # capped: never intervenes more than max_interventions times
+    s = Supervisor(max_interventions=1)
+    dup = [StepLog(1, "", ["x()"], ["ok"]), StepLog(2, "", ["x()"], ["ok"])]
+    assert s.review(dup) is not None and s.review(dup) is None
 
 
 if __name__ == "__main__":

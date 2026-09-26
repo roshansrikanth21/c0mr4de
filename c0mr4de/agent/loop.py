@@ -61,7 +61,7 @@ class StepLog:
 
 class AgentLoop:
     def __init__(self, backend: Backend, tools: ToolRegistry, max_steps: int = 25, verbose: bool = True,
-                 on_event=None, should_stop=None, system_prompt: str | None = None):
+                 on_event=None, should_stop=None, system_prompt: str | None = None, supervise: bool = True):
         self.backend = backend
         self.tools = tools
         self.max_steps = max_steps
@@ -69,10 +69,14 @@ class AgentLoop:
         self.system_prompt = system_prompt or SYSTEM_PROMPT
         self.log: list[StepLog] = []
         # on_event(kind, data): fired for live UIs. kinds: "thought", "tool_call",
-        # "tool_result", "final". Optional - None means no streaming.
+        # "tool_result", "final", "supervisor". Optional - None means no streaming.
         self.on_event = on_event or (lambda kind, data: None)
         # should_stop(): return True to cancel the run (operator hit Stop).
         self.should_stop = should_stop or (lambda: False)
+        # Independent watcher (foreman-inspired): catches loop/stuck/thrash and
+        # steers or stops. Conservative + capped; disable with supervise=False.
+        from c0mr4de.agent.supervisor import Supervisor
+        self.supervisor = Supervisor() if supervise else None
 
     def run(self, task: str) -> str:
         # Auto-inject relevant playbook/vault knowledge up front rather than
@@ -181,6 +185,18 @@ class AgentLoop:
 
             self.log.append(step_log)
             messages.extend(self.backend.format_turn(response, tool_results))
+
+            # Independent supervision: catch loops/stuck/thrash and steer or stop.
+            if self.supervisor:
+                verdict = self.supervisor.review(self.log)
+                if verdict:
+                    action, msg = verdict
+                    if self.verbose:
+                        print(f"  ~~ {msg}")
+                    self.on_event("supervisor", {"action": action, "text": msg})
+                    messages.append({"role": "user", "content": msg})
+                    if action == "stop" and not wrapup_sent:
+                        wrapup_sent = True  # its message already tells the model to report
 
         return (
             f"Stopped after {self.max_steps} steps without a final answer. "
