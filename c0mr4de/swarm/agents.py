@@ -35,7 +35,8 @@ RECON = AgentProfile(
         "non-prod/admin surface. Do NOT exploit anything - just discover and clearly summarise what you "
         "found and which spots look most promising to attack. Be thorough but fast; issue real tool calls."
     ),
-    tool_names=["crawl", "probe", "fuzz_paths", "fuzz_param", "http_request", "browser_navigate",
+    tool_names=["map_attack_surface", "import_scan", "attack_surface_report", "amass_enum", "naabu_scan",
+                "shodan_host", "crawl", "probe", "fuzz_paths", "fuzz_param", "http_request", "browser_navigate",
                 "browser_storage", "whatweb", "nmap", "subfinder", "nuclei_scan", "consult_knowledge"],
 )
 

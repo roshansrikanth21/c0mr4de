@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from c0mr4de import auth, scope  # noqa: E402
 from c0mr4de.memory.writeup_prep import prepare  # noqa: E402
+from c0mr4de.surface import AttackSurface  # noqa: E402
+from c0mr4de.surface.analyze import prioritize  # noqa: E402
 from c0mr4de.tools.burp import burp_import  # noqa: E402
 from c0mr4de.tools.worklog import worklog, read_worklog  # noqa: E402
 
@@ -88,6 +90,32 @@ def test_writeup_prep_cleans_and_dedupes():
         assert sum(p.startswith("crypto_") for p in produced) == 1    # dedupe left exactly one crypto file
         body = (out / "web_sqli.md").read_text(encoding="utf-8")
         assert "img" not in body and "category: web" in body  # image stripped, provenance kept
+
+
+def test_surface_parses_messy_output_and_prioritizes():
+    s = AttackSurface("acme.com")
+    # subfinder plain lines (with noise the parser must skip)
+    s.ingest_subfinder("[INF] enumerating\napi.acme.com\nadmin.acme.com\nblog.acme.com\n")
+    # naabu json + plain, incl. a dangerous port
+    s.ingest_naabu('{"host":"api.acme.com","ip":"10.0.0.5","port":6379}\nadmin.acme.com:443\n')
+    # httpx json (one exposed .git endpoint on a WordPress host) + plain line
+    s.ingest_httpx('{"url":"https://admin.acme.com/.git/config","status_code":200,"tech":["WordPress"],"title":"Index"}\n'
+                   'https://blog.acme.com [200] [Blog] [Nginx]\n')
+    # nuclei jsonl finding
+    s.ingest_nuclei('{"template-id":"CVE-2021-1234","info":{"name":"RCE","severity":"critical"},"matched-at":"https://admin.acme.com/.git/config"}\n')
+
+    st = s.stats()
+    assert st["hosts"] >= 3 and st["endpoints"] >= 2 and st["findings"] == 1
+    assert 6379 in s.hosts["api.acme.com"].ports  # redis captured
+    assert "10.0.0.5" in s.hosts["api.acme.com"].ips
+
+    ranked = prioritize(s)
+    assert ranked, "should flag weak points"
+    top = ranked[0]
+    # the .git endpoint on WordPress with a critical nuclei hit must rank first
+    assert top["ref"] == "https://admin.acme.com/.git/config"
+    reasons = " ".join(top["reasons"]).lower()
+    assert ".git" in reasons and "critical" in reasons
 
 
 if __name__ == "__main__":
