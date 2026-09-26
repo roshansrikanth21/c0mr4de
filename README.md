@@ -49,14 +49,19 @@ c0mr4de/
     embeddings.py       — Ollama nomic-embed-text (local, free)
     vectorstore.py        — Chroma, persisted to ./memory_store
     ingest.py               — loads playbooks/ + Obsidian vault + engagement vault
+    writeup_prep.py          — strip a cloned writeup repo to clean text for ingestion
   engagement.py         — auto-save a run (target + fingerprinted stack + sequence)
   web/                    — minimalistic FastAPI UI: chat, upload+OCR, live streaming
-playbooks/                — distilled generic methodology (JWT bypass, recon, OWASP,
-                            source audit, OSINT, tool references)
+playbooks/                — distilled methodology: JWT bypass, recon, OWASP, source
+                            audit, OSINT, tool refs, and per-class exploit guides
+                            (SSRF, IDOR, XXE, race, GraphQL, deser+SSTI)
+  playbooks/ctf/            — CTF category methodology (web/crypto/forensics/
+                            reversing/pwn/misc-osint)
 pentest-vault/            — engagement library: actual targets + the sequences that
                             worked, ingested so the agent reuses methodology by stack
 benchmark/                — mock targets + scored harnesses (Haveloc JWT, path traversal)
-tests/test_core.py        — pure-logic unit tests (9 passing), incl. failover regression
+tests/                    — pure-logic unit tests (14 passing across test_core +
+                            test_tools), incl. the failover regression
 config/config.example.yaml — pick your backend here
 ```
 
@@ -139,6 +144,21 @@ Re-run ingestion any time you add a new playbook or the Obsidian vault changes:
 
 ```powershell
 py -m c0mr4de.cli ingest
+```
+
+### Growing the knowledge base from writeups (the honest way)
+
+RAG retrieves on *relevance*, not volume — a 50GB dump of challenge archives is
+mostly un-embeddable noise (binaries, images, challenge files). What actually
+makes it smarter is clean prose: writeups, methodology, cheat sheets. `prep-writeups`
+walks a cloned repo, drops everything that isn't text, strips images/base64/dupes,
+tags each file by category, and writes a flat corpus ready to ingest:
+
+```powershell
+py -m c0mr4de.cli prep-writeups D:\some-ctf-writeups --out workspace\writeup-corpus
+py -m c0mr4de.cli ingest --sources workspace\writeup-corpus
+# or in one step:
+py -m c0mr4de.cli prep-writeups D:\some-ctf-writeups --out workspace\writeup-corpus --ingest
 ```
 
 ## Scope and safety

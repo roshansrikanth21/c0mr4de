@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from c0mr4de import auth, scope  # noqa: E402
+from c0mr4de.memory.writeup_prep import prepare  # noqa: E402
 from c0mr4de.tools.burp import burp_import  # noqa: E402
 from c0mr4de.tools.worklog import worklog, read_worklog  # noqa: E402
 
@@ -62,6 +63,31 @@ def test_burp_import_parses_export(tmp_path=None):
     assert "BENCH" not in out  # sanity
     p = burp_import(str(f), only_params=True)
     assert "id" in p
+
+
+def test_writeup_prep_cleans_and_dedupes():
+    import tempfile
+    long = "Detailed writeup body describing the payload and the recovered flag. " * 6
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "web").mkdir()
+        (root / "crypto").mkdir()
+        (root / ".git").mkdir()
+        (root / "web" / "sqli.md").write_text(
+            "# SQLi\n\n![img](x.png)\n\n" + long, encoding="utf-8")
+        (root / "crypto" / "rsa.md").write_text("# RSA\n\n" + long, encoding="utf-8")
+        (root / "crypto" / "rsa-dup.md").write_text("# RSA\n\n" + long, encoding="utf-8")  # dupe
+        (root / "web" / "stub.md").write_text("# TODO\nWIP\n", encoding="utf-8")            # too small
+        (root / ".git" / "secret.md").write_text("# nope\n\n" + long, encoding="utf-8")     # skipped dir
+        out = root / "_out"
+        s = prepare(root, out, source_label="t")
+        assert s["kept"] == 2 and s["skipped_dupe"] == 1 and s["skipped_small"] == 1
+        assert s["by_category"].get("web") == 1 and s["by_category"].get("crypto") == 1
+        produced = sorted(p.name for p in out.glob("*.md"))
+        assert len(produced) == 2 and "web_sqli.md" in produced       # single .md ext, no double ext
+        assert sum(p.startswith("crypto_") for p in produced) == 1    # dedupe left exactly one crypto file
+        body = (out / "web_sqli.md").read_text(encoding="utf-8")
+        assert "img" not in body and "category: web" in body  # image stripped, provenance kept
 
 
 if __name__ == "__main__":

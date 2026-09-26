@@ -50,6 +50,14 @@ def main() -> None:
     ingest_p = sub.add_parser("ingest", help="Ingest the Obsidian vault + playbooks into the knowledge store")
     ingest_p.add_argument("--vault", type=Path, default=None)
 
+    prep_p = sub.add_parser("prep-writeups",
+                            help="Strip a downloaded writeup repo to clean text ready for --sources ingestion")
+    prep_p.add_argument("src", type=Path, help="Cloned writeup repo / doc folder")
+    prep_p.add_argument("--out", type=Path, default=Path("workspace/writeup-corpus"))
+    prep_p.add_argument("--label", default="writeups")
+    prep_p.add_argument("--max-files", type=int, default=0)
+    prep_p.add_argument("--ingest", action="store_true", help="Ingest the cleaned output immediately")
+
     swarm_p = sub.add_parser("swarm", help="Run the multi-agent swarm (recon -> exploit -> report) on a target")
     swarm_p.add_argument("target", type=str, help="Target URL/host")
     swarm_p.add_argument("--objective", type=str, default="Find, exploit and chain vulnerabilities; capture any secret; report.")
@@ -111,6 +119,26 @@ def main() -> None:
         from c0mr4de.memory.ingest import main as ingest_main
 
         ingest_main()
+        return
+
+    if args.command == "prep-writeups":
+        from c0mr4de.memory.writeup_prep import prepare
+
+        summary = prepare(args.src, args.out, source_label=args.label, max_files=args.max_files)
+        print(f"scanned {summary['scanned']} -> kept {summary['kept']} "
+              f"(skipped {summary['skipped_small']} small, {summary['skipped_dupe']} dupe); "
+              f"~{summary['total_chars']:,} chars in {summary['out']}")
+        if summary["by_category"]:
+            print("by category: " + ", ".join(f"{k}:{v}" for k, v in sorted(summary["by_category"].items())))
+        if args.ingest:
+            from c0mr4de.memory.ingest import ingest_directory
+            from c0mr4de.memory.vectorstore import VectorStore
+
+            store = VectorStore()
+            n = ingest_directory(store, args.out, f"source:{Path(summary['out']).name}")
+            print(f"ingested {n} chunks; store now holds {store.count()} total")
+        else:
+            print(f"next: c0mr4de ingest --sources {summary['out']}")
         return
 
     if args.command == "run":
