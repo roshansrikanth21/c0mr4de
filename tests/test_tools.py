@@ -92,6 +92,24 @@ def test_writeup_prep_cleans_and_dedupes():
         assert "img" not in body and "category: web" in body  # image stripped, provenance kept
 
 
+def test_knowledge_graph_links_by_wikilink_and_concept():
+    import tempfile
+    from c0mr4de.memory.graph import KnowledgeGraph
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "ssrf.md").write_text("# SSRF\n\nServer-side request forgery via url param. See [[recon]].", encoding="utf-8")
+        (root / "engagement.md").write_text("# Target X\n\nFound SSRF then chained to account takeover.", encoding="utf-8")
+        (root / "recon.md").write_text("# Recon\n\nSubdomain enumeration methodology.", encoding="utf-8")
+        g = KnowledgeGraph().build([root])
+        # wikilink edge ssrf -> recon, and both docs share the SSRF concept
+        assert ("ssrf", "recon", "links") in g.edges
+        assert "SSRF" in g.nodes and g.nodes["SSRF"] == "concept"
+        rel = {n for n, k, d in g.related("SSRF")}
+        assert "ssrf" in rel and "engagement" in rel   # both mention SSRF -> connected via the concept
+        # topic match on a concept term, and account-takeover concept present
+        assert g._match("server-side request forgery") == "SSRF"
+
+
 def test_surface_parses_messy_output_and_prioritizes():
     s = AttackSurface("acme.com")
     # subfinder plain lines (with noise the parser must skip)

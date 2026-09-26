@@ -66,6 +66,9 @@ def main() -> None:
     pl_p.add_argument("--out", type=Path, default=Path("workspace/writeup-corpus/pentesterland"))
     pl_p.add_argument("--ingest", action="store_true", help="Embed the built corpus into the vector store")
 
+    graph_p = sub.add_parser("graph", help="Build + render the memory knowledge graph (relationships across playbooks/vault)")
+    graph_p.add_argument("--topic", default="", help="Print graph recall for a topic instead of rendering")
+
     swarm_p = sub.add_parser("swarm", help="Run the multi-agent swarm (recon -> exploit -> report) on a target")
     swarm_p.add_argument("target", type=str, help="Target URL/host")
     swarm_p.add_argument("--objective", type=str, default="Find, exploit and chain vulnerabilities; capture any secret; report.")
@@ -144,6 +147,14 @@ def main() -> None:
             print(f"ingested {n} chunks; store now holds {store.count()} total")
         else:
             print(f"next: c0mr4de ingest --sources {summary['out']}")
+        return
+
+    if args.command == "graph":
+        from c0mr4de.memory.graph import recall_related, render_graph
+        if args.topic:
+            print(recall_related(args.topic))
+        else:
+            print(render_graph())
         return
 
     if args.command == "prep-writeups":
