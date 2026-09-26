@@ -44,17 +44,21 @@ TECH_VULN_HINTS = {
     "graphql": ("introspection / authz / batching", 30), "s3": ("bucket perms", 25),
 }
 
-# path/title fragments in an endpoint -> (tag, score, why)
+# path/title fragments in an endpoint -> (tag, score, why, needs_live).
+# needs_live=True: it's an "is this file actually exposed?" check, so it only
+# counts when the endpoint really responded (status < 400). A 404 .git is NOT a
+# finding. needs_live=False: a surface marker (admin/login/api) that matters even
+# behind auth.
 SENSITIVE_PATHS = [
-    (".git", 55, "exposed .git -> source disclosure"), (".env", 60, "exposed .env -> secrets"),
-    ("/actuator", 45, "Spring actuator exposed"), ("/admin", 30, "admin panel"),
-    ("/login", 12, "auth surface"), ("/phpmyadmin", 45, "DB admin panel"),
-    ("/wp-admin", 25, "WP admin"), ("/wp-login", 20, "WP login"), ("/jenkins", 45, "Jenkins"),
-    ("/swagger", 22, "API docs -> endpoint map"), ("/graphql", 28, "GraphQL endpoint"),
-    ("/api", 12, "API surface"), ("/debug", 40, "debug endpoint"), ("/.svn", 45, "SVN exposed"),
-    ("/server-status", 35, "Apache status exposed"), ("/config", 30, "config exposed"),
-    ("/backup", 40, "backup exposed"), ("/.ds_store", 25, "DS_Store listing"),
-    ("/graphiql", 30, "GraphQL IDE exposed"), ("/metrics", 25, "metrics exposed"),
+    (".git", 55, "exposed .git -> source disclosure", True), (".env", 60, "exposed .env -> secrets", True),
+    ("/actuator", 45, "Spring actuator exposed", True), ("/admin", 30, "admin panel", False),
+    ("/login", 12, "auth surface", False), ("/phpmyadmin", 45, "DB admin panel", True),
+    ("/wp-admin", 25, "WP admin", False), ("/wp-login", 20, "WP login", False), ("/jenkins", 45, "Jenkins", True),
+    ("/swagger", 22, "API docs -> endpoint map", True), ("/graphql", 28, "GraphQL endpoint", False),
+    ("/api", 12, "API surface", False), ("/debug", 40, "debug endpoint", True), ("/.svn", 45, "SVN exposed", True),
+    ("/server-status", 35, "Apache status exposed", True), ("/config", 30, "config exposed", True),
+    ("/backup", 40, "backup exposed", True), ("/.ds_store", 25, "DS_Store listing", True),
+    ("/graphiql", 30, "GraphQL IDE exposed", True), ("/metrics", 25, "metrics exposed", True),
 ]
 
 # statuses worth attention beyond obvious 200s
@@ -65,8 +69,9 @@ _INTERESTING_STATUS = {401: "auth-gated (worth trying to bypass)", 403: "forbidd
 def _score_endpoint(e) -> tuple[int, list[str]]:
     score, reasons = 0, []
     low_url, low_title = e.url.lower(), (e.title or "").lower()
-    for frag, s, why in SENSITIVE_PATHS:
-        if frag in low_url:
+    reachable = e.status is None or e.status < 400        # 404/gone => file not actually exposed
+    for frag, s, why, needs_live in SENSITIVE_PATHS:
+        if frag in low_url and not (needs_live and not reachable):
             score += s
             reasons.append(why)
     for tech in e.tech + [e.webserver, low_title]:
