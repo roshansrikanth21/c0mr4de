@@ -161,6 +161,14 @@ py -m c0mr4de.cli ingest --sources workspace\writeup-corpus
 py -m c0mr4de.cli prep-writeups D:\some-ctf-writeups --out workspace\writeup-corpus --ingest
 ```
 
+Pentester Land's full index (~6400 curated bug-bounty/pentest writeups) can be
+pulled in wholesale, grouped by bug class so a query like "SSRF account takeover"
+retrieves a chunk full of real writeups + URLs (re-run weekly to refresh):
+
+```powershell
+py -m c0mr4de.cli pentesterland --ingest
+```
+
 ## Scope and safety
 
 The system prompt hard-requires the agent to stay inside a named target scope

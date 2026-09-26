@@ -61,6 +61,11 @@ def main() -> None:
     prep_p.add_argument("--max-files", type=int, default=0)
     prep_p.add_argument("--ingest", action="store_true", help="Ingest the cleaned output immediately")
 
+    pl_p = sub.add_parser("pentesterland",
+                          help="Download + ingest Pentester Land's full writeup index (~6400 writeups, by bug class)")
+    pl_p.add_argument("--out", type=Path, default=Path("workspace/writeup-corpus/pentesterland"))
+    pl_p.add_argument("--ingest", action="store_true", help="Embed the built corpus into the vector store")
+
     swarm_p = sub.add_parser("swarm", help="Run the multi-agent swarm (recon -> exploit -> report) on a target")
     swarm_p.add_argument("target", type=str, help="Target URL/host")
     swarm_p.add_argument("--objective", type=str, default="Find, exploit and chain vulnerabilities; capture any secret; report.")
@@ -122,6 +127,23 @@ def main() -> None:
         from c0mr4de.memory.ingest import run_ingest
 
         run_ingest(vault=args.vault, playbooks=args.playbooks, sources=list(args.sources))
+        return
+
+    if args.command == "pentesterland":
+        from c0mr4de.memory.pentesterland import build_corpus, fetch_list
+
+        print("downloading pentester.land/writeups.json ...")
+        summary = build_corpus(fetch_list(), args.out)
+        print(f"built {summary['bug_classes']} bug-class files from {summary['entries']} writeups in {summary['out']}")
+        if args.ingest:
+            from c0mr4de.memory.ingest import ingest_directory
+            from c0mr4de.memory.vectorstore import VectorStore
+
+            store = VectorStore()
+            n = ingest_directory(store, args.out, "source:pentesterland")
+            print(f"ingested {n} chunks; store now holds {store.count()} total")
+        else:
+            print(f"next: c0mr4de ingest --sources {summary['out']}")
         return
 
     if args.command == "prep-writeups":
