@@ -14,7 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from c0mr4de.agent.backends import (  # noqa: E402
     Backend, LLMResponse, RotatingBackend, _extract_fallback_tool_call, _is_rate_limit,
 )
-from c0mr4de.agent.loop import _trim_history, _looks_like_unexecuted_plan, StepLog  # noqa: E402
+from c0mr4de.agent.loop import (  # noqa: E402
+    _trim_history, _looks_like_unexecuted_plan, _is_negative_conclusion, StepLog,
+)
 from c0mr4de.agent.supervisor import Supervisor  # noqa: E402
 from c0mr4de.tools.web import decode_jwt, tamper_jwt  # noqa: E402
 from c0mr4de.engagement import _fingerprint_stack  # noqa: E402
@@ -110,6 +112,16 @@ def test_fingerprint_stack():
     assert "Next.js" in _fingerprint_stack("has Next-Action header and _next/static")
     assert "Juice Shop" in _fingerprint_stack("GET /rest/products returned")
     assert _fingerprint_stack("totally generic text") == []
+
+
+def test_negative_conclusion_detection():
+    # the completion gate keys off these; a "no vulns" verdict must be recognized
+    assert _is_negative_conclusion("No exploitable vulnerabilities identified.")
+    assert _is_negative_conclusion("The app appears clean; found nothing.")
+    assert _is_negative_conclusion("No SQLi or XSS observed.")
+    # a real finding must NOT trip the gate
+    assert not _is_negative_conclusion("Confirmed SQL injection in the searchTerm parameter (critical).")
+    assert not _is_negative_conclusion("IDOR lets any user read another's order via id=.")
 
 
 def test_supervisor_catches_loop_and_stuck():

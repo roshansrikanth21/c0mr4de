@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import shlex
+import urllib.parse
 
 import httpx
 
@@ -13,17 +15,20 @@ from c0mr4de import auth
 from c0mr4de.tools.base import Tool
 from c0mr4de.tools.recon import _run_in_kali
 
+# Headers worth showing; everything else (esp. giant Set-Cookie/AWSALB blobs) is noise
+# that used to drown the actual page content in the tool result.
+_KEEP_HEADERS = ("content-type", "server", "location", "x-powered-by", "www-authenticate",
+                 "content-length", "content-security-policy", "access-control-allow-origin")
+_LINK_RE = re.compile(r"""(?:href|action|src)\s*=\s*["']([^"'#>]+)""", re.I)
+_FORM_RE = re.compile(r"(?is)<form\b[^>]*>.*?</form>")
+_ACTION_RE = re.compile(r"""(?is)\baction\s*=\s*["']([^"']*)""")
+_METHOD_RE = re.compile(r"""(?is)\bmethod\s*=\s*["']([^"']*)""")
+_INPUT_RE = re.compile(r"""(?is)<(?:input|select|textarea)\b[^>]*\bname\s*=\s*["']([^"']+)""")
 
-def http_request(url: str, method: str = "GET", headers: str = "{}", body: str = "") -> str:
-    from c0mr4de import scope
-    if scope.check(url) == "out":
-        return f"BLOCKED: {url} is OUT OF SCOPE per the rules of engagement. Do not test it."
-    try:
-        hdrs = json.loads(headers) if headers else {}
-    except json.JSONDecodeError:
-        return "ERROR: headers must be a JSON object string, e.g. '{\"Cookie\": \"a=b\"}'"
-    # Attach operator-provided session auth for this host, if any. Agent-supplied
-    # headers win on conflict, but a stored Cookie is merged in when absent.
+
+def _scope_auth(url: str, hdrs: dict) -> tuple[dict, bool]:
+    """Merge operator session auth for this host. Agent headers win; a stored
+    Cookie is added only when absent. Returns (headers, authed)."""
     a = auth.for_url(url)
     authed = False
     if a:
@@ -31,18 +36,77 @@ def http_request(url: str, method: str = "GET", headers: str = "{}", body: str =
             hdrs.setdefault(k, v)
         if a.get("cookie") and not any(k.lower() == "cookie" for k in hdrs):
             hdrs["Cookie"] = a["cookie"]
-            authed = True
-        authed = authed or bool(a.get("headers"))
+        authed = bool(a.get("headers")) or bool(a.get("cookie"))
+    return hdrs, authed
+
+
+def _request(url: str, method: str = "GET", hdrs: dict | None = None, body: str = "") -> httpx.Response:
+    """Low-level request with scope + auth applied. Raises on scope block / HTTP error.
+    Shared by http_request, the crawler, and the injection tester."""
+    from c0mr4de import scope
+    if scope.check(url) == "out":
+        raise PermissionError(f"{url} is OUT OF SCOPE per the rules of engagement")
+    hdrs, _ = _scope_auth(url, dict(hdrs or {}))
+    return httpx.request(method.upper(), url, headers=hdrs, content=body or None,
+                         timeout=20, follow_redirects=True)
+
+
+def extract_surface(html: str, base_url: str, same_host_only: bool = True) -> dict:
+    """Pull the testable surface out of an HTML body: same-host links, the query
+    params seen on them, and forms (action/method/inputs). This is what lets the
+    agent FOLLOW a page instead of guessing paths."""
+    base = urllib.parse.urlparse(base_url)
+    links, params, forms = set(), set(), []
+    for raw in _LINK_RE.findall(html or ""):
+        if raw.lower().startswith(("mailto:", "tel:", "javascript:", "data:")):
+            continue
+        u = urllib.parse.urljoin(base_url, raw)
+        p = urllib.parse.urlparse(u)
+        if same_host_only and p.netloc and p.netloc != base.netloc:
+            continue
+        links.add(p._replace(query="", fragment="").geturl())
+        for k in urllib.parse.parse_qs(p.query):
+            params.add(k)
+    for fhtml in _FORM_RE.findall(html or ""):
+        am = _ACTION_RE.search(fhtml)
+        mm = _METHOD_RE.search(fhtml)
+        inputs = _INPUT_RE.findall(fhtml)
+        forms.append({"action": urllib.parse.urljoin(base_url, am.group(1)) if am else base_url,
+                      "method": (mm.group(1).upper() if mm else "GET"), "inputs": inputs})
+        params.update(inputs)
+    return {"links": sorted(links), "params": sorted(params), "forms": forms}
+
+
+def http_request(url: str, method: str = "GET", headers: str = "{}", body: str = "") -> str:
     try:
-        resp = httpx.request(method.upper(), url, headers=hdrs, content=body or None, timeout=20, follow_redirects=True)
+        hdrs = json.loads(headers) if headers else {}
+    except json.JSONDecodeError:
+        return "ERROR: headers must be a JSON object string, e.g. '{\"Cookie\": \"a=b\"}'"
+    try:
+        resp = _request(url, method, hdrs, body)
+    except PermissionError as exc:
+        return f"BLOCKED: {exc}. Do not test it."
     except httpx.HTTPError as exc:
         return f"REQUEST ERROR: {exc}"
-    body_preview = resp.text[:3000]
-    return (
-        f"status: {resp.status_code}{'  [authenticated session]' if authed else ''}\n"
-        f"headers: {dict(resp.headers)}\n"
-        f"body (first 3000 chars):\n{body_preview}"
-    )
+    _, authed = _scope_auth(url, dict(hdrs))
+    kept = {k: v for k, v in resp.headers.items() if k.lower() in _KEEP_HEADERS}
+    cookie_names = [c.split("=", 1)[0].strip() for c in resp.headers.get_list("set-cookie")]
+    out = [f"status: {resp.status_code}{'  [authenticated session]' if authed else ''}",
+           f"headers: {kept}"]
+    if cookie_names:
+        out.append(f"set-cookie: {', '.join(cookie_names)} (values hidden)")
+    ctype = resp.headers.get("content-type", "")
+    if "html" in ctype:
+        surf = extract_surface(resp.text, str(resp.url))
+        if surf["links"]:
+            out.append(f"links ({len(surf['links'])}): " + ", ".join(surf["links"][:20]))
+        if surf["forms"]:
+            out.append("forms: " + "; ".join(
+                f"{f['method']} {f['action']} inputs=[{','.join(f['inputs'])}]" for f in surf["forms"][:6]))
+        if surf["params"]:
+            out.append(f"params seen: {', '.join(surf['params'][:20])}  <- test these (test_injection)")
+    out.append(f"body (first 2000 chars):\n{resp.text[:2000]}")
+    return "\n".join(out)
 
 
 def decode_jwt(token: str) -> str:

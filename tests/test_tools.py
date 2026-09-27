@@ -92,6 +92,20 @@ def test_writeup_prep_cleans_and_dedupes():
         assert "img" not in body and "category: web" in body  # image stripped, provenance kept
 
 
+def test_extract_surface_finds_links_forms_params():
+    from c0mr4de.tools.web import extract_surface
+    html = ('<html><body><a href="/catalog?searchTerm=x">c</a>'
+            '<a href="https://evil.com/x">ext</a>'
+            '<a href="mailto:a@b.com">m</a>'
+            '<form action="/login" method="post"><input name="user"><input name="pass"></form>'
+            '</body></html>')
+    s = extract_surface(html, "https://shop.test/home")
+    assert "https://shop.test/catalog" in s["links"]           # same-host link, query stripped
+    assert all("evil.com" not in l for l in s["links"])          # off-host dropped
+    assert "searchTerm" in s["params"] and "user" in s["params"] and "pass" in s["params"]
+    assert s["forms"] and s["forms"][0]["action"].endswith("/login") and s["forms"][0]["method"] == "POST"
+
+
 def test_knowledge_graph_links_by_wikilink_and_concept():
     import tempfile
     from c0mr4de.memory.graph import KnowledgeGraph

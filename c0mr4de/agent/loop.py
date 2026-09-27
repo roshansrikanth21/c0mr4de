@@ -36,6 +36,19 @@ def _trim_history(messages: list[dict], keep_full: int = 4, old_cap: int = 240) 
 
 _PLAN_SIGNALS = ("```", "let's", "we will", "we should", "next step", "step 1", "i will", "import ")
 
+# Tools that constitute real discovery/testing effort. Concluding "nothing found"
+# without any of these is the "gave up shallow" failure a live run exposed.
+_EFFORT_TOOLS = ("test_injection", "crawl_site", "crawl", "sqlmap", "tamper_jwt",
+                 "fuzz_param", "oob_poll", "nuclei_scan", "map_attack_surface")
+_NEGATIVE_SIGNALS = ("no vuln", "no exploitable", "no exploit", "nothing found", "no findings",
+                     "not vulnerable", "no obvious", "found nothing", "no issues", "no direct impact",
+                     "no sqli", "no xss", "clean")
+
+
+def _is_negative_conclusion(text: str) -> bool:
+    low = (text or "").lower()
+    return any(sig in low for sig in _NEGATIVE_SIGNALS)
+
 
 def _looks_like_unexecuted_plan(text: str, tools_used: bool) -> bool:
     """Heuristic: did the model describe/code an action instead of calling a
@@ -107,6 +120,10 @@ class AgentLoop:
         nudges_left = 3
         tools_used = False
         wrapup_sent = False
+        gate_used = False
+
+        def _effort_spent() -> bool:
+            return any(any(t in c for t in _EFFORT_TOOLS) for s in self.log for c in s.tool_calls)
 
         for step in range(1, self.max_steps + 1):
             if self.should_stop():
@@ -157,6 +174,24 @@ class AgentLoop:
                             ),
                         }
                     )
+                    self.log.append(step_log)
+                    continue
+                # Completion gate: don't accept a "nothing found" verdict if the run
+                # never actually crawled or tested an input. Fires once, and not near
+                # the step cap (the wrap-up nudge owns that).
+                if (not gate_used and not wrapup_sent and _is_negative_conclusion(response.text)
+                        and not _effort_spent()):
+                    gate_used = True
+                    if self.verbose:
+                        print("  ~~ completion gate: concluded 'nothing' without testing — pushing to dig")
+                    self.on_event("supervisor", {"action": "gate", "text": "completion gate: dig before concluding"})
+                    messages.append({"role": "assistant", "content": response.text})
+                    messages.append({"role": "user", "content": (
+                        "You're concluding no vulnerabilities, but you have not crawled for the real "
+                        "endpoints/params or tested a single input. Before any 'clean' verdict: call "
+                        "crawl_site to map endpoints + params + forms, then test_injection on the params "
+                        "you find (and consult_knowledge / recall_related for this stack). Only report "
+                        "'no findings' AFTER you have actually tested inputs.")})
                     self.log.append(step_log)
                     continue
                 self.log.append(step_log)
