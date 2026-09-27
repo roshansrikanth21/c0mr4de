@@ -36,10 +36,10 @@ def _trim_history(messages: list[dict], keep_full: int = 4, old_cap: int = 240) 
 
 _PLAN_SIGNALS = ("```", "let's", "we will", "we should", "next step", "step 1", "i will", "import ")
 
-# Tools that constitute real discovery/testing effort. Concluding "nothing found"
-# without any of these is the "gave up shallow" failure a live run exposed.
-_EFFORT_TOOLS = ("test_injection", "crawl_site", "crawl", "sqlmap", "tamper_jwt",
-                 "fuzz_param", "oob_poll", "nuclei_scan", "map_attack_surface")
+# Tools that constitute actually TESTING an input (not just discovery). Concluding
+# "nothing found" without any of these is the "gave up shallow" failure a live run
+# exposed — crawling alone is not testing, so it must not satisfy the gate.
+_EFFORT_TOOLS = ("test_injection", "sqlmap", "tamper_jwt", "fuzz_param", "oob_poll", "nuclei_scan")
 _NEGATIVE_SIGNALS = ("no vuln", "no exploitable", "no exploit", "nothing found", "no findings",
                      "not vulnerable", "no obvious", "found nothing", "no issues", "no direct impact",
                      "no sqli", "no xss", "clean")
@@ -121,6 +121,7 @@ class AgentLoop:
         tools_used = False
         wrapup_sent = False
         gate_used = False
+        empty_retries = 2
 
         def _effort_spent() -> bool:
             return any(any(t in c for t in _EFFORT_TOOLS) for s in self.log for c in s.tool_calls)
@@ -155,6 +156,26 @@ class AgentLoop:
                 self.on_event("thought", {"step": step, "text": response.text})
 
             if not response.tool_calls:
+                # An EMPTY reply (no text, no tool calls) is almost always a free-tier
+                # rate-limit/TPM hit (Groq returns empty at the 8000 TPM ceiling), not a
+                # real conclusion. Don't silently end — trim harder and retry a couple times.
+                if not (response.text or "").strip():
+                    if empty_retries > 0:
+                        empty_retries -= 1
+                        if self.verbose:
+                            print("  !! empty reply (likely TPM/rate-limit) — trimming context and retrying")
+                        self.on_event("supervisor", {"action": "retry", "text": "empty reply — retrying"})
+                        # aggressively shrink history so the next request fits the token budget
+                        messages = _trim_history(messages, keep_full=2, old_cap=120)
+                        messages.append({"role": "user", "content":
+                                         "Continue: call the next tool (or write_report if you have enough)."})
+                        self.log.append(step_log)
+                        continue
+                    self.log.append(step_log)
+                    msg = ("Run ended on repeated empty replies — likely the free-tier token/min ceiling. "
+                           "Re-run with fewer tools, a paid/higher-TPM key, or a shorter task.")
+                    self.on_event("final", {"text": msg})
+                    return msg
                 # Weak models often narrate a plan (or write code) instead of
                 # actually calling tools, then stop. If that looks like what
                 # happened, push back once rather than accepting it as done.
@@ -210,6 +231,10 @@ class AgentLoop:
                         print(f"  -> calling {call.name}({call.arguments})")
                     self.on_event("tool_call", {"name": call.name, "arguments": call.arguments})
                     result = tool.run(**call.arguments)
+                    # Cap a single tool result so a big dump (e.g. crawl_site's endpoint
+                    # list) can't blow the free-tier token/min budget and cause empty replies.
+                    if len(result) > 2600:
+                        result = result[:2600] + "\n...[truncated to protect the token budget — narrow the query or read specifics]"
                     if self.verbose:
                         preview = result if len(result) < 500 else result[:500] + "... (truncated)"
                         print(f"  <- {preview}")
