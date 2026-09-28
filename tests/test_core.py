@@ -114,6 +114,25 @@ def test_fingerprint_stack():
     assert _fingerprint_stack("totally generic text") == []
 
 
+def test_tool_selection_trims_and_adapts():
+    from c0mr4de.agent.toolselect import select_names, CORE
+    avail = set(CORE) | {"decode_jwt", "tamper_jwt", "sqlmap", "fuzz_param", "email_osint",
+                          "username_search", "nuclei_scan", "map_attack_surface", "browser_eval",
+                          "browser_storage", "oob_start", "oob_poll"}
+    # core is always present; unrelated tools are trimmed out
+    sel = select_names("map the attack surface of example.com", "", set(), avail)
+    assert set(CORE) <= set(sel)
+    assert "map_attack_surface" in sel and "email_osint" not in sel
+    # a JWT appearing in context unlocks the token tools
+    sel2 = select_names("pentest the app", "found a bearer jwt in localStorage", set(), avail)
+    assert "decode_jwt" in sel2 and "tamper_jwt" in sel2
+    # already-used tools are preserved even if not keyword-matched
+    sel3 = select_names("generic task", "", {"nuclei_scan"}, avail)
+    assert "nuclei_scan" in sel3
+    # capped
+    assert len(select_names("recon osint jwt sql xss ssrf idor port shodan", "", set(), avail, cap=12)) <= 12
+
+
 def test_negative_conclusion_detection():
     # the completion gate keys off these; a "no vulns" verdict must be recognized
     assert _is_negative_conclusion("No exploitable vulnerabilities identified.")

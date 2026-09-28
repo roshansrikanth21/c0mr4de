@@ -74,7 +74,8 @@ class StepLog:
 
 class AgentLoop:
     def __init__(self, backend: Backend, tools: ToolRegistry, max_steps: int = 25, verbose: bool = True,
-                 on_event=None, should_stop=None, system_prompt: str | None = None, supervise: bool = True):
+                 on_event=None, should_stop=None, system_prompt: str | None = None, supervise: bool = True,
+                 trim_tools: bool = True):
         self.backend = backend
         self.tools = tools
         self.max_steps = max_steps
@@ -90,6 +91,9 @@ class AgentLoop:
         # steers or stops. Conservative + capped; disable with supervise=False.
         from c0mr4de.agent.supervisor import Supervisor
         self.supervisor = Supervisor() if supervise else None
+        # Send only relevant tool schemas per step (not all ~42) to stay under
+        # free-tier TPM. The full registry stays executable regardless.
+        self.trim_tools = trim_tools
 
     def run(self, task: str) -> str:
         # Auto-inject relevant playbook/vault knowledge up front rather than
@@ -115,7 +119,15 @@ class AgentLoop:
             f"more specific as you go) ---\n{knowledge}"
         )
         messages: list[dict] = [{"role": "user", "content": primed_task}]
-        tool_schemas = self.tools.schemas()
+        all_schemas = self.tools.schemas()
+
+        def _schemas_for_step() -> list[dict]:
+            if not self.trim_tools:
+                return all_schemas
+            from c0mr4de.agent.toolselect import select_schemas
+            used = {c.split("(")[0] for s in self.log for c in s.tool_calls}
+            recent = " ".join((s.assistant_text or "") for s in self.log[-2:])
+            return select_schemas(self.tools, task, recent, used)
 
         nudges_left = 3
         tools_used = False
@@ -144,7 +156,7 @@ class AgentLoop:
                     ),
                 })
             _t0 = time.time()
-            response = self.backend.generate(self.system_prompt, _trim_history(messages), tools=tool_schemas)
+            response = self.backend.generate(self.system_prompt, _trim_history(messages), tools=_schemas_for_step())
             _served = getattr(self.backend, "_last_used", self.backend).name
             stats.record(_served, response.usage.get("input_tokens", 0),
                          response.usage.get("output_tokens", 0), time.time() - _t0)
