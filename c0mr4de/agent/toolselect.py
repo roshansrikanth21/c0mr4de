@@ -24,7 +24,7 @@ GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
     (("jwt", "token", "bearer", "session", "cookie", "auth", "login", "sso"),
      ["decode_jwt", "tamper_jwt", "browser_storage", "browser_eval"]),
     (("sql", "sqli", "injection", "inject", "xss", "error-based"),
-     ["sqlmap", "fuzz_param", "oob_start", "oob_poll"]),
+     ["test_all_params", "sqlmap", "fuzz_param", "oob_start", "oob_poll"]),
     (("ssrf", "xxe", "blind", "rce", "oob", "out-of-band", "out of band", "deserial", "ssti", "smuggl"),
      ["oob_start", "oob_poll"]),
     (("idor", "access control", "privilege", "broken access", "authorization", "param"),

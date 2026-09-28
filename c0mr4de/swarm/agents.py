@@ -36,8 +36,9 @@ RECON = AgentProfile(
         "found and which spots look most promising to attack. Be thorough but fast; issue real tool calls."
     ),
     tool_names=["map_attack_surface", "import_scan", "attack_surface_report", "amass_enum", "naabu_scan",
-                "shodan_host", "crawl", "probe", "fuzz_paths", "fuzz_param", "http_request", "browser_navigate",
-                "browser_storage", "whatweb", "nmap", "subfinder", "nuclei_scan", "consult_knowledge", "recall_related"],
+                "shodan_host", "crawl", "crawl_site", "probe", "fuzz_paths", "fuzz_param", "http_request",
+                "browser_navigate", "browser_storage", "whatweb", "nmap", "subfinder", "nuclei_scan",
+                "consult_knowledge", "recall_related"],
 )
 
 EXPLOIT = AgentProfile(
@@ -49,9 +50,9 @@ EXPLOIT = AgentProfile(
         "vuln state severity and how it chains. Confirm exploits by actually running them - do not claim "
         "a bypass you didn't demonstrate. Issue real tool calls; don't write code in a block."
     ),
-    tool_names=["http_request", "decode_jwt", "tamper_jwt", "fuzz_param", "browser_navigate",
-                "browser_storage", "browser_eval", "sqlmap", "nikto", "oob_start", "oob_poll",
-                "consult_knowledge", "recall_related", "search_writeups", "fetch_writeup"],
+    tool_names=["http_request", "crawl_site", "test_injection", "test_all_params", "decode_jwt", "tamper_jwt",
+                "fuzz_param", "browser_navigate", "browser_storage", "browser_eval", "sqlmap", "nikto",
+                "oob_start", "oob_poll", "consult_knowledge", "recall_related", "search_writeups", "fetch_writeup"],
 )
 
 REPORT = AgentProfile(

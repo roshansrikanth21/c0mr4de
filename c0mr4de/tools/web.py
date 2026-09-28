@@ -56,7 +56,7 @@ def extract_surface(html: str, base_url: str, same_host_only: bool = True) -> di
     params seen on them, and forms (action/method/inputs). This is what lets the
     agent FOLLOW a page instead of guessing paths."""
     base = urllib.parse.urlparse(base_url)
-    links, params, forms = set(), set(), []
+    links, params, param_urls, forms = set(), set(), set(), []
     for raw in _LINK_RE.findall(html or ""):
         if raw.lower().startswith(("mailto:", "tel:", "javascript:", "data:")):
             continue
@@ -65,6 +65,8 @@ def extract_surface(html: str, base_url: str, same_host_only: bool = True) -> di
         if same_host_only and p.netloc and p.netloc != base.netloc:
             continue
         links.add(p._replace(query="", fragment="").geturl())
+        if p.query:
+            param_urls.add(p._replace(fragment="").geturl())   # keep the query so params can be tested
         for k in urllib.parse.parse_qs(p.query):
             params.add(k)
     for fhtml in _FORM_RE.findall(html or ""):
@@ -74,7 +76,8 @@ def extract_surface(html: str, base_url: str, same_host_only: bool = True) -> di
         forms.append({"action": urllib.parse.urljoin(base_url, am.group(1)) if am else base_url,
                       "method": (mm.group(1).upper() if mm else "GET"), "inputs": inputs})
         params.update(inputs)
-    return {"links": sorted(links), "params": sorted(params), "forms": forms}
+    return {"links": sorted(links), "params": sorted(params),
+            "param_urls": sorted(param_urls), "forms": forms}
 
 
 def http_request(url: str, method: str = "GET", headers: str = "{}", body: str = "") -> str:
