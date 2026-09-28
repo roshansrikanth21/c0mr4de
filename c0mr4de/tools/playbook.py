@@ -17,10 +17,15 @@ def _get_store() -> VectorStore:
 
 
 def consult_knowledge(query: str) -> str:
-    store = _get_store()
-    if store.count() == 0:
-        return "Knowledge store is empty. Run `c0mr4de ingest` first to load playbooks and the Obsidian vault."
-    results = store.query(query, n_results=4)
+    try:
+        store = _get_store()
+        if store.count() == 0:
+            return "Knowledge store is empty. Run `c0mr4de ingest` first to load playbooks and the Obsidian vault."
+        results = store.query(query, n_results=4)
+    except Exception as exc:  # noqa: BLE001 - embedder (Ollama) or store may be down
+        return (f"consult_knowledge unavailable ({type(exc).__name__}: the local embedder/Ollama is likely "
+                f"down). Vector search needs Ollama running (`ollama serve`). Meanwhile use recall_related "
+                f"(graph recall, no embedder needed) for connected playbooks/engagements on a topic.")
     if not results:
         return "No relevant knowledge found for this query."
     parts = []
