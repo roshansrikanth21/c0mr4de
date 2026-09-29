@@ -69,6 +69,12 @@ def main() -> None:
     graph_p = sub.add_parser("graph", help="Build + render the memory knowledge graph (relationships across playbooks/vault)")
     graph_p.add_argument("--topic", default="", help="Print graph recall for a topic instead of rendering")
 
+    laya_p = sub.add_parser("laya-dataset",
+                            help="Build a Laya fine-tune decisions dataset from reports + the pentest-vault")
+    laya_p.add_argument("--sources", type=Path, nargs="*", default=None,
+                        help="report .md files and/or folders (default: pentest-vault)")
+    laya_p.add_argument("--out", type=Path, default=None)
+
     swarm_p = sub.add_parser("swarm", help="Run the multi-agent swarm (recon -> exploit -> report) on a target")
     swarm_p.add_argument("target", type=str, help="Target URL/host")
     swarm_p.add_argument("--objective", type=str, default="Find, exploit and chain vulnerabilities; capture any secret; report.")
@@ -147,6 +153,22 @@ def main() -> None:
             print(f"ingested {n} chunks; store now holds {store.count()} total")
         else:
             print(f"next: c0mr4de ingest --sources {summary['out']}")
+        return
+
+    if args.command == "laya-dataset":
+        import sys as _sys
+        from c0mr4de.memory import laya_dataset
+        _argv = ["laya-dataset"]
+        if args.sources:
+            _argv += ["--sources", *[str(s) for s in args.sources]]
+        if args.out:
+            _argv += ["--out", str(args.out)]
+        _saved = _sys.argv
+        _sys.argv = _argv
+        try:
+            laya_dataset.main()
+        finally:
+            _sys.argv = _saved
         return
 
     if args.command == "graph":

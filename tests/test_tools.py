@@ -92,6 +92,20 @@ def test_writeup_prep_cleans_and_dedupes():
         assert "img" not in body and "category: web" in body  # image stripped, provenance kept
 
 
+def test_laya_dataset_extracts_severity_and_vuln():
+    from c0mr4de.memory.laya_dataset import _parse_report
+    report = (
+        "### F-01 — Public-read S3 objects\n**Severity:** High if enumerable / Medium\n"
+        "Impact: anyone can download PII.\n\n"
+        "### F-06 — Positive controls (keep these)\n- SSO, encrypted bucket, WAF.\n")
+    d = _parse_report(report, "rep")
+    sev = [x for x in d if x["question"]["type"] == "score"]
+    noul = [x for x in d if x["question"]["type"] == "noul"]
+    assert any(x["answer"] == "high" for x in sev)                 # headline severity taken
+    ans = {x["state"][:6]: x["answer"] for x in noul}
+    assert ans.get("F-01 —") == "yes" and ans.get("F-06 —") == "no"  # positive control = negative example
+
+
 def test_extract_surface_finds_links_forms_params():
     from c0mr4de.tools.web import extract_surface
     html = ('<html><body><a href="/catalog?searchTerm=x">c</a>'
