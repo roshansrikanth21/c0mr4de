@@ -69,9 +69,17 @@ class Supervisor:
 
 
 def assess_completion(backend, task: str, recent_text: str) -> dict:
-    """OPTIONAL semantic check (foreman-style typed questions) using the loop's own
-    backend. Returns {'complete': bool, 'off_track': bool, 'reason': str}. Best-effort:
-    any parsing/backend failure yields a neutral verdict so it never breaks a run."""
+    """OPTIONAL semantic check (foreman-style typed questions). Prefers Laya — a
+    local, calibrated decision model (free, ~33ms, no hallucination, no Groq TPM) —
+    and falls back to the loop's own LLM backend if laya isn't installed. Returns
+    {'complete': bool, 'off_track': bool, 'reason': str}. Best-effort: any failure
+    yields a neutral verdict so it never breaks a run."""
+    from c0mr4de.agent import laya_decider
+    p = laya_decider.assess(task, recent_text)
+    if p is not None:                       # local calibrated path (preferred)
+        return {"complete": p["complete"] >= 0.6, "off_track": p["off_track"] >= 0.6,
+                "reason": (f"laya: complete={p['complete']:.2f} off_track={p['off_track']:.2f} "
+                           f"stuck={p['stuck']:.2f} needs_human={p['needs_human']:.2f}")}
     import json
     prompt = (
         "You are a supervisor over a pentest agent. Based ONLY on the mission and the agent's recent "

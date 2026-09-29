@@ -33,6 +33,8 @@ full = [
 # browser control and email OSINT (optional integrations)
 browser = ["playwright>=1.40"]
 osint = ["holehe>=1.61"]
+# local calibrated decision model for supervision (foreman's Jev, open + local)
+laya = ["laya>=0.3"]
 dev = ["pytest>=7.0"]
 
 [project.scripts]

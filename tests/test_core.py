@@ -133,6 +133,17 @@ def test_tool_selection_trims_and_adapts():
     assert len(select_names("recon osint jwt sql xss ssrf idor port shodan", "", set(), avail, cap=12)) <= 12
 
 
+def test_laya_decider_guarded():
+    # laya is an OPTIONAL dep; c0mr4de must work with or without it. When absent,
+    # available() is False and assess() returns None (supervisor then falls back).
+    from c0mr4de.agent import laya_decider
+    if not laya_decider.available():
+        assert laya_decider.assess("task", "recent") is None
+    else:
+        out = laya_decider.assess("pentest task", "crawled and tested inputs")
+        assert out is None or set(out) == {"complete", "off_track", "stuck", "needs_human"}
+
+
 def test_negative_conclusion_detection():
     # the completion gate keys off these; a "no vulns" verdict must be recognized
     assert _is_negative_conclusion("No exploitable vulnerabilities identified.")
