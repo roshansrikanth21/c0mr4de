@@ -119,65 +119,108 @@ def add_osint_note(entity: str, entity_type: str, linked_to: str = "", relation:
     return f"added {entity_type} '{entity}' to the graph" + (f", linked to {linked_to}" if linked_to else "")
 
 
-_GRAPH_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>c0mr4de OSINT graph</title>
+# Luminous entity palette — jewel tones that glow on a deep warm-black stage.
+_PALETTE = {
+    "username": "#5eead4", "profile": "#7dd3fc", "url": "#c4b5fd", "email": "#fbbf24",
+    "name": "#fca5a5", "phone": "#f9a8d4", "org": "#6ee7b7", "location": "#fcd34d", "domain": "#67e8f9",
+}
+
+_GRAPH_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>c0mr4de · OSINT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.js"></script>
 <style>
- body{{margin:0;background:#0a0c10;color:#d7dce5;font-family:ui-monospace,Consolas,monospace;overflow:hidden}}
- #h{{padding:12px 18px;border-bottom:1px solid #232936;display:flex;align-items:center;gap:10px}}
- #h b{{color:#4ade80;letter-spacing:1px}} #h .sub{{color:#7b8494;font-size:12px}}
- #wrap{{position:relative}} #net{{width:100vw;height:calc(100vh - 49px)}}
- #legend{{position:absolute;top:12px;right:12px;background:#12151ccc;border:1px solid #232936;
-   border-radius:8px;padding:10px 12px;font-size:11px;backdrop-filter:blur(4px)}}
- #legend .row{{display:flex;align-items:center;gap:7px;margin:3px 0}}
- #legend .dot{{width:10px;height:10px;border-radius:50%;display:inline-block}}
- #search{{position:absolute;top:12px;left:12px;background:#12151c;border:1px solid #232936;
-   color:#d7dce5;border-radius:8px;padding:7px 11px;font-family:inherit;font-size:12px;width:200px}}
- #search:focus{{outline:none;border-color:#1f6b40}}
+ :root{{--amber:#e6a94e;--ink:#f2ede3;--soft:#a79e8d;--faint:#6f6858;--stage:#0b0a08;}}
+ *{{box-sizing:border-box}}
+ html,body{{height:100%}}
+ body{{margin:0;background:var(--stage);color:var(--ink);
+   font-family:"IBM Plex Mono",ui-monospace,Consolas,monospace;overflow:hidden}}
+ /* deep stage: warm-black base + two drifting blooms + grain + vignette */
+ .bloom{{position:fixed;border-radius:50%;filter:blur(80px);opacity:.5;pointer-events:none;z-index:0}}
+ #b1{{width:60vw;height:60vw;left:-10vw;top:-18vw;
+   background:radial-gradient(circle,rgba(230,169,78,.42),transparent 62%);animation:drift1 26s ease-in-out infinite}}
+ #b2{{width:52vw;height:52vw;right:-14vw;bottom:-20vw;
+   background:radial-gradient(circle,rgba(94,234,212,.24),transparent 62%);animation:drift2 32s ease-in-out infinite}}
+ @keyframes drift1{{0%,100%{{transform:translate(0,0)}}50%{{transform:translate(6vw,4vw)}}}}
+ @keyframes drift2{{0%,100%{{transform:translate(0,0)}}50%{{transform:translate(-5vw,-4vw)}}}}
+ #grain{{position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}}
+ #vig{{position:fixed;inset:0;z-index:2;pointer-events:none;
+   background:radial-gradient(120% 120% at 50% 42%,transparent 55%,rgba(0,0,0,.55) 100%)}}
+ #h{{position:relative;z-index:3;padding:20px 26px 14px;display:flex;align-items:flex-end;
+   justify-content:space-between;gap:16px}}
+ #h .eyebrow{{font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--amber);opacity:.85}}
+ #h h1{{margin:2px 0 0;font-family:"Instrument Serif",Georgia,serif;font-weight:400;
+   font-size:34px;letter-spacing:.01em;line-height:1;color:var(--ink)}}
+ #h h1 em{{font-style:italic;color:var(--amber)}}
+ #h .stat{{text-align:right;font-size:11px;color:var(--soft);line-height:1.7}}
+ #h .stat b{{color:var(--ink);font-weight:500}}
+ #wrap{{position:relative;z-index:1}}
+ #net{{width:100vw;height:calc(100vh - 78px)}}
+ .glass{{background:rgba(20,17,12,.55);border:1px solid rgba(230,169,78,.16);border-radius:12px;
+   backdrop-filter:blur(10px);box-shadow:0 8px 30px rgba(0,0,0,.45)}}
+ #legend{{position:absolute;top:14px;right:16px;z-index:4;padding:12px 14px;font-size:11px}}
+ #legend .cap{{color:var(--faint);letter-spacing:.18em;text-transform:uppercase;font-size:9.5px;margin-bottom:7px}}
+ #legend .row{{display:flex;align-items:center;gap:8px;margin:5px 0;color:var(--soft)}}
+ #legend .dot{{width:9px;height:9px;border-radius:50%;display:inline-block}}
+ #search{{position:absolute;top:14px;left:16px;z-index:4;color:var(--ink);padding:9px 13px;
+   font-family:inherit;font-size:12px;width:210px}}
+ #search::placeholder{{color:var(--faint)}}
+ #search:focus{{outline:none;border-color:rgba(230,169,78,.55);box-shadow:0 0 0 3px rgba(230,169,78,.12)}}
+ #hint{{position:absolute;bottom:14px;left:16px;z-index:4;font-size:10.5px;color:var(--faint);letter-spacing:.04em}}
+ @media (prefers-reduced-motion:reduce){{.bloom{{animation:none}}}}
 </style></head><body>
-<div id="h"><b>c0mr4de</b> <span class="sub">OSINT graph · {n} entities · {e} links · drag to explore, scroll to zoom</span></div>
+<div class="bloom" id="b1"></div><div class="bloom" id="b2"></div>
+<div id="grain"></div><div id="vig"></div>
+<header id="h">
+ <div><div class="eyebrow">c0mr4de · osint intelligence</div><h1>Entity <em>Graph</em></h1></div>
+ <div class="stat"><b>{n}</b> entities&nbsp;&nbsp;·&nbsp;&nbsp;<b>{e}</b> links<br>drag to explore · scroll to zoom</div>
+</header>
 <div id="wrap">
- <input id="search" placeholder="find a node…"/>
- <div id="legend">{legend}</div>
+ <input id="search" class="glass" placeholder="find a node…"/>
+ <div id="legend" class="glass"><div class="cap">entities</div>{legend}</div>
  <div id="net"></div>
+ <div id="hint">click a node to focus · hover for detail</div>
 </div>
 <script>
-const COLORS={{username:'#4ade80',profile:'#60a5fa',url:'#a78bfa',email:'#f59e0b',name:'#f87171',phone:'#f472b6',org:'#34d399',location:'#fbbf24',domain:'#22d3ee'}};
+const COLORS={{username:'#5eead4',profile:'#7dd3fc',url:'#c4b5fd',email:'#fbbf24',name:'#fca5a5',phone:'#f9a8d4',org:'#6ee7b7',location:'#fcd34d',domain:'#67e8f9'}};
 const nodes=new vis.DataSet({nodes});
 const edges=new vis.DataSet({edges});
-nodes.forEach(nd=>nodes.update({{id:nd.id,
-  color:{{background:COLORS[nd.group]||'#94a3b8',border:'#0a0c10',highlight:{{background:'#fff',border:COLORS[nd.group]||'#94a3b8'}}}},
-  font:{{color:'#c7cede',size:12,face:'ui-monospace'}}}}));
+nodes.forEach(nd=>{{const c=COLORS[nd.group]||'#a8b0bd';nodes.update({{id:nd.id,
+  color:{{background:c,border:'rgba(11,10,8,.85)',highlight:{{background:'#fff8ea',border:c}},hover:{{background:c,border:'#fff8ea'}}}},
+  shadow:{{enabled:true,color:c,size:20,x:0,y:0}},
+  font:{{color:'#efe8da',size:13,face:'IBM Plex Mono',strokeWidth:0,vadjust:2}}}});}});
 const net=new vis.Network(document.getElementById('net'),{{nodes,edges}},{{
- nodes:{{shape:'dot',borderWidth:2,scaling:{{min:10,max:42,label:{{min:11,max:20}}}},shadow:{{enabled:true,color:'#00000066',size:8}}}},
- edges:{{color:{{color:'#2b3444',highlight:'#4ade80'}},arrows:{{to:{{scaleFactor:0.5}}}},smooth:{{type:'continuous'}},
-   font:{{color:'#6b7686',size:9,strokeWidth:0,align:'middle'}},width:1.2}},
- physics:{{stabilization:{{iterations:220}},barnesHut:{{gravitationalConstant:-12000,springLength:150,springConstant:0.04,damping:0.5}}}},
- interaction:{{hover:true,tooltipDelay:120}}
+ nodes:{{shape:'dot',borderWidth:1.5,scaling:{{min:9,max:46,label:{{min:12,max:22}}}}}},
+ edges:{{color:{{color:'rgba(167,158,141,.22)',highlight:'#e6a94e',hover:'rgba(230,169,78,.6)'}},
+   arrows:{{to:{{enabled:true,scaleFactor:0.42}}}},smooth:{{type:'cubicBezier',roundness:0.55}},
+   font:{{color:'#8a8272',size:9.5,strokeWidth:0,align:'middle'}},width:1,hoverWidth:1.6,selectionWidth:2}},
+ physics:{{stabilization:{{iterations:240}},barnesHut:{{gravitationalConstant:-14000,springLength:165,springConstant:0.035,damping:0.55,avoidOverlap:0.2}}}},
+ interaction:{{hover:true,tooltipDelay:110,navigationButtons:false}}
 }});
-// search-to-focus
+// redraw once the webfont lands so canvas labels use IBM Plex Mono
+if(document.fonts&&document.fonts.ready){{document.fonts.ready.then(()=>net.redraw());}}
 document.getElementById('search').addEventListener('keydown',e=>{{
  if(e.key!=='Enter')return; const q=e.target.value.toLowerCase(); if(!q)return;
  const hit=nodes.get().find(n=>(n.label||'').toLowerCase().includes(q)||(''+n.id).toLowerCase().includes(q));
- if(hit){{net.focus(hit.id,{{scale:1.3,animation:true}});net.selectNodes([hit.id]);}}
+ if(hit){{net.focus(hit.id,{{scale:1.35,animation:{{duration:600,easingFunction:'easeInOutCubic'}}}});net.selectNodes([hit.id]);}}
 }});
 </script></body></html>"""
 
 
 def _legend_html(types_present) -> str:
     labels = {
-        "username": "username", "profile": "profile", "url": "url/page", "email": "email",
+        "username": "username", "profile": "profile", "url": "url / page", "email": "email",
         "name": "name", "phone": "phone", "org": "org", "location": "location", "domain": "domain",
     }
-    colors = {
-        "username": "#4ade80", "profile": "#60a5fa", "url": "#a78bfa", "email": "#f59e0b",
-        "name": "#f87171", "phone": "#f472b6", "org": "#34d399", "location": "#fbbf24", "domain": "#22d3ee",
-    }
     rows = [
-        f'<div class="row"><span class="dot" style="background:{colors.get(t, "#94a3b8")}"></span>{labels.get(t, t)}</div>'
+        f'<div class="row"><span class="dot" style="background:{_PALETTE.get(t, "#a8b0bd")};'
+        f'box-shadow:0 0 8px {_PALETTE.get(t, "#a8b0bd")}"></span>{labels.get(t, t)}</div>'
         for t in labels if t in types_present
     ]
-    return "".join(rows) or '<div class="row">no entities</div>'
+    return "".join(rows) or '<div class="row">no entities yet</div>'
 
 
 def render_osint_graph(name: str = "osint_graph.html") -> str:
