@@ -90,11 +90,25 @@ def _get(url: str) -> tuple[int, str]:
     return r.status_code, r.text
 
 
-def _analyze(send, base_body: str, base_len: int, orig: str, exec_url=None) -> list[str]:
+def _get_with_type(url: str) -> tuple[int, str, str]:
+    r = _request(url)
+    return r.status_code, r.text, r.headers.get("content-type", "")
+
+
+# Content-types a browser will NOT render as executable HTML - reflection into
+# these is not directly exploitable as XSS regardless of whether it's escaped.
+# Caught a real false positive on a JSON API that reflected the payload verbatim
+# (valid, harmless JSON) and got reported as "likely reflected XSS".
+_NON_HTML_TYPES = ("json", "text/plain", "/csv")
+
+
+def _analyze(send, base_body: str, base_len: int, orig: str, exec_url=None, content_type: str = "") -> list[str]:
     """Run the detection probes via a `send(value) -> (status, body)` closure.
     Shared by GET-query and POST-form testing. `exec_url(payload) -> url`, when
     given, lets the XSS check escalate from string-reflection to a PageBreak-style
-    execution-confirmed result (load it in a real browser, check the JS actually ran)."""
+    execution-confirmed result (load it in a real browser, check the JS actually ran).
+    `content_type` gates the XSS heuristic to responses a browser would actually
+    render as HTML - a JSON/plain-text reflection is not exploitable the same way."""
     notes: list[str] = []
     sqli_confirmed = False
     try:
@@ -106,10 +120,20 @@ def _analyze(send, base_body: str, base_len: int, orig: str, exec_url=None) -> l
         pass
     if not sqli_confirmed:
         try:
+            # A second, UNMODIFIED baseline sample measures the page's natural
+            # response-length variance (random content, timestamps, ads, ...) -
+            # caught a real false positive on a page with randomized filler text
+            # where TRUE/FALSE-payload noise alone exceeded the flat 40-char/5%
+            # floor. The real diff must clearly exceed what naturally varies.
+            _, base2_body = send(orig)
+            noise = abs(len(base2_body) - base_len)
             _, t_body = send(orig + "' OR '1'='1")
             _, f_body = send(orig + "' AND '1'='2")
-            if abs(len(t_body) - len(f_body)) > max(40, 0.05 * base_len):
-                notes.append("SQLi (blind): TRUE vs FALSE payloads gave materially different responses")
+            diff = abs(len(t_body) - len(f_body))
+            threshold = max(40, 0.05 * base_len, noise * 3)
+            if diff > threshold:
+                notes.append(f"SQLi (blind): TRUE vs FALSE payloads gave materially different responses "
+                             f"(diff={diff} chars, well above the page's natural noise of {noise})")
                 sqli_confirmed = True
         except httpx.HTTPError:
             pass
@@ -119,26 +143,29 @@ def _analyze(send, base_body: str, base_len: int, orig: str, exec_url=None) -> l
         time_note = _confirm_time_sqli(send, orig)
         if time_note:
             notes.append(time_note)
-    try:
-        _, x_body = send(_XSS_PAYLOAD)
-        reflected_raw = _XSS_PAYLOAD in x_body
-        reflected_enc = (not reflected_raw) and (_XSS_MARK in x_body)
-        if reflected_raw or reflected_enc:
-            confirmed = False
-            if exec_url is not None:
-                try:
-                    from c0mr4de.tools.browser import confirm_xss_exec
-                    confirmed = confirm_xss_exec(exec_url(_XSS_EXEC_PAYLOAD))
-                except Exception:  # noqa: BLE001 - Playwright missing, etc.
-                    confirmed = False
-            if confirmed:
-                notes.append("XSS CONFIRMED: payload EXECUTED in a real browser (deterministic proof, not a guess)")
-            elif reflected_raw:
-                notes.append("XSS: payload reflected UN-encoded — likely reflected XSS (browser confirm inconclusive/unavailable)")
-            else:
-                notes.append("reflection: marker echoed but encoded — check context")
-    except httpx.HTTPError:
-        pass
+    ctype_low = (content_type or "").lower()
+    non_html = any(t in ctype_low for t in _NON_HTML_TYPES) and "html" not in ctype_low
+    if not non_html:
+        try:
+            _, x_body = send(_XSS_PAYLOAD)
+            reflected_raw = _XSS_PAYLOAD in x_body
+            reflected_enc = (not reflected_raw) and (_XSS_MARK in x_body)
+            if reflected_raw or reflected_enc:
+                confirmed = False
+                if exec_url is not None:
+                    try:
+                        from c0mr4de.tools.browser import confirm_xss_exec
+                        confirmed = confirm_xss_exec(exec_url(_XSS_EXEC_PAYLOAD))
+                    except Exception:  # noqa: BLE001 - Playwright missing, etc.
+                        confirmed = False
+                if confirmed:
+                    notes.append("XSS CONFIRMED: payload EXECUTED in a real browser (deterministic proof, not a guess)")
+                elif reflected_raw:
+                    notes.append("XSS: payload reflected UN-encoded — likely reflected XSS (browser confirm inconclusive/unavailable)")
+                else:
+                    notes.append("reflection: marker echoed but encoded — check context")
+        except httpx.HTTPError:
+            pass
     return notes
 
 
@@ -212,7 +239,7 @@ def _test_query_url(url: str, only: str = "") -> list[str]:
     qs = urllib.parse.parse_qs(parts.query)
     if not qs:
         return []
-    _, base_body = _get(url)
+    _, base_body, ctype = _get_with_type(url)
     base_len = len(base_body)
     out = []
     for p in ([only] if only else list(qs)):
@@ -227,7 +254,7 @@ def _test_query_url(url: str, only: str = "") -> list[str]:
 
         def send(val):
             return _get(build_url(val))
-        notes = _analyze(send, base_body, base_len, orig, exec_url=build_url)
+        notes = _analyze(send, base_body, base_len, orig, exec_url=build_url, content_type=ctype)
         if notes:
             out.append(f"[{parts.path}?{p}] " + "; ".join(notes))
     return out
@@ -246,9 +273,9 @@ def _test_form(form: dict) -> list[str]:
                          urllib.parse.urlencode(baseline))
         else:
             r = _request(action + ("&" if urllib.parse.urlparse(action).query else "?") + urllib.parse.urlencode(baseline))
-        return r.status_code, r.text
+        return r.status_code, r.text, r.headers.get("content-type", "")
     try:
-        _, base_body = send_base()
+        _, base_body, ctype = send_base()
     except (PermissionError, httpx.HTTPError):
         return []
     base_len = len(base_body)
@@ -270,7 +297,8 @@ def _test_form(form: dict) -> list[str]:
             return r.status_code, r.text
         # Browser-confirmation only makes sense for GET forms (a URL we can load);
         # POST forms stay string-reflection-only — documented limitation.
-        notes = _analyze(send, base_body, base_len, "test", exec_url=build_get_url if method == "GET" else None)
+        notes = _analyze(send, base_body, base_len, "test",
+                         exec_url=build_get_url if method == "GET" else None, content_type=ctype)
         if notes:
             out.append(f"[{method} {urllib.parse.urlparse(action).path}:{p}] " + "; ".join(notes))
     return out

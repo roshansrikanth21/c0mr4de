@@ -11,6 +11,7 @@ from c0mr4de.memory.writeup_prep import prepare  # noqa: E402
 from c0mr4de.surface import AttackSurface  # noqa: E402
 from c0mr4de.surface.analyze import prioritize  # noqa: E402
 from c0mr4de.tools.burp import burp_import  # noqa: E402
+from c0mr4de.tools.webrecon import _analyze  # noqa: E402
 from c0mr4de.tools.worklog import worklog, read_worklog  # noqa: E402
 
 
@@ -104,6 +105,48 @@ def test_laya_dataset_extracts_severity_and_vuln():
     assert any(x["answer"] == "high" for x in sev)                 # headline severity taken
     ans = {x["state"][:6]: x["answer"] for x in noul}
     assert ans.get("F-01 —") == "yes" and ans.get("F-06 —") == "no"  # positive control = negative example
+
+
+def test_xss_content_type_gate_avoids_false_positive():
+    # A JSON API reflecting the payload verbatim is NOT exploitable (a browser
+    # doesn't execute script from application/json) - found this as a real false
+    # positive ("likely reflected XSS") before the content-type gate was added.
+    def send_json(val):
+        return 200, f'{{"q": "{val}"}}'
+    notes = _analyze(send_json, '{"q": "x"}', 10, "x", content_type="application/json")
+    assert not any("XSS" in n or "reflect" in n for n in notes)
+    # The exact same raw reflection on real HTML must still be flagged.
+    def send_html(val):
+        return 200, f"<div>{val}</div>"
+    notes2 = _analyze(send_html, "<div>x</div>", 10, "x", content_type="text/html; charset=utf-8")
+    assert any("XSS" in n for n in notes2)
+
+
+def test_sqli_boolean_diff_noise_floor():
+    # _analyze's internal call order is: 0=error-probe, 1=base2(noise baseline),
+    # 2=TRUE-payload, 3=FALSE-payload, 4+=timing/XSS probes (length irrelevant
+    # there) - a dict keyed by call index is robust to that, unlike a fixed-length
+    # iterator (which raised StopIteration mid-test on the first draft of this).
+    import itertools
+
+    # A page with large natural response-length variance (random filler, ads,
+    # timestamps) must NOT trip the boolean-diff heuristic just because TRUE/FALSE
+    # payload bodies differ - the diff must clearly exceed the page's own noise.
+    # Found this as a real false positive before the noise-floor fix.
+    noisy_pattern = {0: 250, 1: 250, 2: 80, 3: 260}  # noise=|250-14|=236; diff=|80-260|=180 < 236*3
+    noisy_counter = itertools.count()
+    def send_noisy(val):
+        return 200, "x" * noisy_pattern.get(next(noisy_counter), 50)
+    notes = _analyze(send_noisy, "x" * 14, 14, "orig")
+    assert not any("SQLi" in n for n in notes)
+
+    # A STABLE page (low natural noise) with a real boolean-based diff must still fire.
+    stable_pattern = {0: 14, 1: 14, 2: 500, 3: 10}  # noise=0; diff=|500-10|=490 > 40
+    stable_counter = itertools.count()
+    def send_stable(val):
+        return 200, "x" * stable_pattern.get(next(stable_counter), 14)
+    notes2 = _analyze(send_stable, "x" * 14, 14, "orig")
+    assert any("SQLi (blind)" in n for n in notes2)
 
 
 def test_extract_surface_finds_links_forms_params():
