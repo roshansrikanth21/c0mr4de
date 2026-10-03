@@ -96,6 +96,29 @@ def render_page_text(url: str, wait_ms: int = 3500, max_chars: int = 20000) -> t
     return title, text[:max_chars]
 
 
+# Must match webrecon.py's _XSS_EXEC_FLAG exactly (duplicated, not imported, to
+# keep this module import-light - it has no dependency on webrecon.py).
+_XSS_EXEC_FLAG = "__c0mr4de_xss_exec7"
+
+
+def confirm_xss_exec(url: str) -> bool:
+    """Load `url` in the real headless browser and check whether an injected XSS
+    payload actually EXECUTED (a window.<flag> write fired), not just reflected in
+    the HTML. This is Google PageBreak's validator pattern applied here: deterministic
+    proof via a real render/JS-execution harness, not string matching - the same
+    reflection-vs-execution gap that let a prior c0mr4de run under-call a lead as
+    'maybe' instead of confirming it. Returns False (never raises) on any failure -
+    Playwright missing, navigation error, timeout - so callers fall back to the
+    string-reflection heuristic. Not a Tool - an internal helper for webrecon.py."""
+    try:
+        page = _ensure_page()
+        page.goto(url, wait_until="domcontentloaded", timeout=12000)
+        page.wait_for_timeout(350)
+        return bool(page.evaluate(f"() => window.{_XSS_EXEC_FLAG} === 1"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 @_guard
 def browser_storage() -> str:
     page = _ensure_page()

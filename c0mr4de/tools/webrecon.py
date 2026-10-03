@@ -32,6 +32,11 @@ _SQL_ERRORS = (
 )
 _XSS_MARK = "c0mr4dexss7"
 _XSS_PAYLOAD = f"<{_XSS_MARK}>"
+# Must match browser.py's _XSS_EXEC_FLAG. Execution-confirmation tier (Google
+# PageBreak's validator pattern): don't just check the payload got reflected,
+# load it in a real browser and check the JS actually RAN.
+_XSS_EXEC_FLAG = "__c0mr4de_xss_exec7"
+_XSS_EXEC_PAYLOAD = f'"><img src=x onerror=window.{_XSS_EXEC_FLAG}=1>'
 _STATIC_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".js", ".ico",
                ".woff", ".woff2", ".ttf", ".webp", ".pdf", ".mp4")
 
@@ -46,9 +51,11 @@ def _get(url: str) -> tuple[int, str]:
     return r.status_code, r.text
 
 
-def _analyze(send, base_body: str, base_len: int, orig: str) -> list[str]:
-    """Run the three detection probes via a `send(value) -> (status, body)` closure.
-    Shared by GET-query and POST-form testing."""
+def _analyze(send, base_body: str, base_len: int, orig: str, exec_url=None) -> list[str]:
+    """Run the detection probes via a `send(value) -> (status, body)` closure.
+    Shared by GET-query and POST-form testing. `exec_url(payload) -> url`, when
+    given, lets the XSS check escalate from string-reflection to a PageBreak-style
+    execution-confirmed result (load it in a real browser, check the JS actually ran)."""
     notes: list[str] = []
     try:
         _, bd = send(orig + "'")
@@ -65,10 +72,22 @@ def _analyze(send, base_body: str, base_len: int, orig: str) -> list[str]:
         pass
     try:
         _, x_body = send(_XSS_PAYLOAD)
-        if _XSS_PAYLOAD in x_body:
-            notes.append("XSS: payload reflected UN-encoded — likely reflected XSS")
-        elif _XSS_MARK in x_body:
-            notes.append("reflection: marker echoed but encoded — check context")
+        reflected_raw = _XSS_PAYLOAD in x_body
+        reflected_enc = (not reflected_raw) and (_XSS_MARK in x_body)
+        if reflected_raw or reflected_enc:
+            confirmed = False
+            if exec_url is not None:
+                try:
+                    from c0mr4de.tools.browser import confirm_xss_exec
+                    confirmed = confirm_xss_exec(exec_url(_XSS_EXEC_PAYLOAD))
+                except Exception:  # noqa: BLE001 - Playwright missing, etc.
+                    confirmed = False
+            if confirmed:
+                notes.append("XSS CONFIRMED: payload EXECUTED in a real browser (deterministic proof, not a guess)")
+            elif reflected_raw:
+                notes.append("XSS: payload reflected UN-encoded — likely reflected XSS (browser confirm inconclusive/unavailable)")
+            else:
+                notes.append("reflection: marker echoed but encoded — check context")
     except httpx.HTTPError:
         pass
     return notes
@@ -152,11 +171,14 @@ def _test_query_url(url: str, only: str = "") -> list[str]:
             continue
         orig = qs.get(p, [""])[0]
 
-        def send(val, _p=p):
+        def build_url(val, _p=p):
             q = {k: v[:] for k, v in qs.items()}
             q[_p] = [val]
-            return _get(parts._replace(query=urllib.parse.urlencode(q, doseq=True)).geturl())
-        notes = _analyze(send, base_body, base_len, orig)
+            return parts._replace(query=urllib.parse.urlencode(q, doseq=True)).geturl()
+
+        def send(val):
+            return _get(build_url(val))
+        notes = _analyze(send, base_body, base_len, orig, exec_url=build_url)
         if notes:
             out.append(f"[{parts.path}?{p}] " + "; ".join(notes))
     return out
@@ -183,6 +205,11 @@ def _test_form(form: dict) -> list[str]:
     base_len = len(base_body)
     out = []
     for p in inputs[:8]:
+        def build_get_url(val, _p=p):
+            data = dict(baseline)
+            data[_p] = val
+            return action + ("&" if urllib.parse.urlparse(action).query else "?") + urllib.parse.urlencode(data)
+
         def send(val, _p=p):
             data = dict(baseline)
             data[_p] = val
@@ -190,9 +217,11 @@ def _test_form(form: dict) -> list[str]:
                 r = _request(action, "POST", {"Content-Type": "application/x-www-form-urlencoded"},
                              urllib.parse.urlencode(data))
             else:
-                r = _request(action + ("&" if urllib.parse.urlparse(action).query else "?") + urllib.parse.urlencode(data))
+                r = _request(build_get_url(val))
             return r.status_code, r.text
-        notes = _analyze(send, base_body, base_len, "test")
+        # Browser-confirmation only makes sense for GET forms (a URL we can load);
+        # POST forms stay string-reflection-only — documented limitation.
+        notes = _analyze(send, base_body, base_len, "test", exec_url=build_get_url if method == "GET" else None)
         if notes:
             out.append(f"[{method} {urllib.parse.urlparse(action).path}:{p}] " + "; ".join(notes))
     return out
@@ -270,7 +299,9 @@ TOOLS = [
     Tool(
         name="test_injection",
         description=("Detection-only SQLi + reflected-XSS test of ONE URL's query params. Give a URL with a "
-                     "query string. Non-destructive; flags leads. For whole-site coverage use test_all_params."),
+                     "query string. XSS leads get a second-tier execution check in a real browser (loads the "
+                     "payload, confirms the JS actually ran) when possible, so a CONFIRMED result is deterministic "
+                     "proof, not a guess. Non-destructive; flags leads. For whole-site coverage use test_all_params."),
         parameters={"type": "object", "properties": {
             "url": {"type": "string"}, "param": {"type": "string", "description": "optional single param"}},
             "required": ["url"]},
