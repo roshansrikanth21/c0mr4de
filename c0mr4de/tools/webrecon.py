@@ -44,7 +44,11 @@ _STATIC_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".css", ".js", ".ico",
 # ~N seconds, reproducibly. This is PageBreak's SQLi validator pattern ("verifying
 # the output and/or timing") - often the ONLY signal when errors are suppressed and
 # boolean-diff is too noisy. Multi-engine, tried in order, first confirmed hit wins.
-_SQLI_SLEEP_SECONDS = 3
+# 5s (not 3s, and sqlmap's own default) - a live re-verification against a real WAN
+# target found natural latency jitter reaching 2.3s across just 20 requests, which
+# left too little margin above a 3s sleep and produced a real false "CONFIRMED" on
+# a page that was a plain 404. See _confirm_time_sqli's noise-floor fix below.
+_SQLI_SLEEP_SECONDS = 5
 _SQLI_TIME_PAYLOADS = (
     f"' OR SLEEP({_SQLI_SLEEP_SECONDS})-- -",             # MySQL / MariaDB
     f"'||pg_sleep({_SQLI_SLEEP_SECONDS})||'",             # PostgreSQL (string context)
@@ -64,21 +68,29 @@ def _timed(send, val) -> float:
 
 
 def _confirm_time_sqli(send, orig: str) -> str | None:
-    """Deterministic time-based blind SQLi confirmation. Requires the delay to
-    reproduce on a SECOND trial (not a fluke/network blip) before confirming."""
-    threshold = _SQLI_SLEEP_SECONDS * 0.7
+    """Deterministic time-based blind SQLi confirmation, noise-aware against real
+    WAN/CDN latency jitter. A real external target (m1rage.amritacybernation.com)
+    was measured naturally varying 0.5s-2.3s across 20 plain GET requests - a flat
+    threshold alone produced a real false "CONFIRMED" on a page that was a plain
+    404. Fix, mirroring the boolean-diff noise-floor fix: take TWO baseline samples
+    to estimate this target's own natural latency ceiling, and require the payload
+    delay to clearly exceed THAT (not just a flat fraction of the sleep duration)
+    before even trying to reproduce it on a second trial."""
     try:
-        if _timed(send, orig) >= threshold:
-            return None  # endpoint is already slow baseline - timing signal unreliable
+        baseline_max = max(_timed(send, orig), _timed(send, orig))
     except httpx.HTTPError:
         return None
+    if baseline_max >= _SQLI_SLEEP_SECONDS * 0.7:
+        return None  # endpoint is already slow/noisy - timing signal unreliable here
+    threshold = max(_SQLI_SLEEP_SECONDS * 0.7, baseline_max * 2, baseline_max + 1.5)
     for payload in _SQLI_TIME_PAYLOADS:
         try:
             if _timed(send, orig + payload) < threshold:
                 continue
             if _timed(send, orig + payload) >= threshold:   # reproduced -> confirmed
                 return (f"SQLi (time-based) CONFIRMED: a conditional sleep payload consistently "
-                        f"delayed the response by ~{_SQLI_SLEEP_SECONDS}s across 2 trials "
+                        f"delayed the response by ~{_SQLI_SLEEP_SECONDS}s across 2 trials, clearly "
+                        f"above this target's own natural latency ceiling of {baseline_max:.1f}s "
                         f"(deterministic timing proof, not a guess)")
         except httpx.HTTPError:
             continue
@@ -239,7 +251,13 @@ def _test_query_url(url: str, only: str = "") -> list[str]:
     qs = urllib.parse.parse_qs(parts.query)
     if not qs:
         return []
-    _, base_body, ctype = _get_with_type(url)
+    base_status, base_body, ctype = _get_with_type(url)
+    if base_status in (404, 410):
+        # The endpoint itself doesn't exist - testing it wastes requests and, for
+        # the timing check, risks a phantom signal from WAN jitter on a page with
+        # nothing behind it (caught exactly this on a real m1rage crawl: two "SQLi
+        # CONFIRMED" results that were actually plain 404s).
+        return []
     base_len = len(base_body)
     out = []
     for p in ([only] if only else list(qs)):
@@ -275,9 +293,11 @@ def _test_form(form: dict) -> list[str]:
             r = _request(action + ("&" if urllib.parse.urlparse(action).query else "?") + urllib.parse.urlencode(baseline))
         return r.status_code, r.text, r.headers.get("content-type", "")
     try:
-        _, base_body, ctype = send_base()
+        base_status, base_body, ctype = send_base()
     except (PermissionError, httpx.HTTPError):
         return []
+    if base_status in (404, 410):
+        return []  # the form's action target doesn't exist - see the matching note above
     base_len = len(base_body)
     out = []
     for p in inputs[:8]:

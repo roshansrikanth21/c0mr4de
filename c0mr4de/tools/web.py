@@ -4,6 +4,7 @@ payment-gate bypass (see playbooks/jwt-client-side-bypass.md)."""
 from __future__ import annotations
 
 import base64
+import html as _html
 import json
 import re
 import shlex
@@ -60,6 +61,12 @@ def extract_surface(html: str, base_url: str, same_host_only: bool = True) -> di
     for raw in _LINK_RE.findall(html or ""):
         if raw.lower().startswith(("mailto:", "tel:", "javascript:", "data:")):
             continue
+        # HTML-unescape the raw attribute value BEFORE parsing - an href written
+        # as "...?a=1&amp;b=2" (correct HTML) has a literal "&amp;" in the source;
+        # parsing it without unescaping first splits "amp;b" off as a bogus param
+        # name. Found this producing garbage params like "?amp;flowName" on a real
+        # crawl - confirmed bug, not a quirk of the target.
+        raw = _html.unescape(raw)
         u = urllib.parse.urljoin(base_url, raw)
         p = urllib.parse.urlparse(u)
         if same_host_only and p.netloc and p.netloc != base.netloc:
@@ -73,7 +80,8 @@ def extract_surface(html: str, base_url: str, same_host_only: bool = True) -> di
         am = _ACTION_RE.search(fhtml)
         mm = _METHOD_RE.search(fhtml)
         inputs = _INPUT_RE.findall(fhtml)
-        forms.append({"action": urllib.parse.urljoin(base_url, am.group(1)) if am else base_url,
+        action_raw = _html.unescape(am.group(1)) if am else base_url
+        forms.append({"action": urllib.parse.urljoin(base_url, action_raw),
                       "method": (mm.group(1).upper() if mm else "GET"), "inputs": inputs})
         params.update(inputs)
     return {"links": sorted(links), "params": sorted(params),

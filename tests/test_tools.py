@@ -197,6 +197,19 @@ def test_extract_surface_finds_links_forms_params():
     assert s["forms"] and s["forms"][0]["action"].endswith("/login") and s["forms"][0]["method"] == "POST"
 
 
+def test_extract_surface_unescapes_amp_entity_in_href():
+    # Found on a real crawl: an href written as the HTML-correct "?a=1&amp;flowName=2"
+    # was parsed WITHOUT unescaping first, so "amp;flowName" became a bogus param
+    # name - a real crawl of m1rage.amritacybernation.com surfaced a batch of
+    # "?amp;client_id", "?amp;scope" etc. entries that were this bug, not real params.
+    from c0mr4de.tools.web import extract_surface
+    html = '<a href="/x?a=1&amp;flowName=signup&amp;client_id=42">link</a>'
+    s = extract_surface(html, "https://example.com/")
+    assert "flowName" in s["params"] and "client_id" in s["params"]
+    assert not any("amp" in p for p in s["params"])
+    assert s["param_urls"][0] == "https://example.com/x?a=1&flowName=signup&client_id=42"
+
+
 def test_knowledge_graph_links_by_wikilink_and_concept():
     import tempfile
     from c0mr4de.memory.graph import KnowledgeGraph
