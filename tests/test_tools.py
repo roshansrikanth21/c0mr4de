@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from c0mr4de import auth, scope  # noqa: E402
 from c0mr4de.memory.writeup_prep import prepare  # noqa: E402
+from c0mr4de.reportgen import generate_report, sanitize_text  # noqa: E402
 from c0mr4de.surface import AttackSurface  # noqa: E402
 from c0mr4de.surface.analyze import prioritize  # noqa: E402
 from c0mr4de.tools.burp import burp_import  # noqa: E402
@@ -105,6 +106,39 @@ def test_laya_dataset_extracts_severity_and_vuln():
     assert any(x["answer"] == "high" for x in sev)                 # headline severity taken
     ans = {x["state"][:6]: x["answer"] for x in noul}
     assert ans.get("F-01 —") == "yes" and ans.get("F-06 —") == "no"  # positive control = negative example
+
+
+def test_sanitize_text_strips_dashes_and_curly_quotes():
+    assert sanitize_text("auth bypass — full takeover") == "auth bypass - full takeover"
+    assert sanitize_text("affects versions 10–20") == "affects versions 10-20"   # digit range -> plain hyphen
+    assert sanitize_text("it’s a “classic” bug…") == "it's a \"classic\" bug..."
+    assert sanitize_text(None) == ""
+    assert sanitize_text(42) == "42"
+
+
+def test_generate_report_structure_and_no_em_dashes():
+    findings = [
+        {"title": "Reflected XSS — search box", "severity": "high", "category": "XSS / CWE-79",
+         "description": "User input is reflected unescaped — a classic bug.",
+         "steps_to_reproduce": "1. Go to /search\n2. Submit <script>", "proof_of_concept": "GET /search?q=<script>",
+         "impact": "Session theft", "remediation": "Encode output"},
+        {"title": "Missing rate limit", "severity": "low", "category": "A04", "description": "No throttling."},
+    ]
+    report = generate_report(target="example.com", findings=findings,
+                             summary="Overview — two issues found.", positives="SSO is used — good.")
+    assert "—" not in report and "–" not in report            # the whole ask: zero em/en dashes
+    assert "’" not in report and "“" not in report            # and no curly quotes either
+    assert "# Penetration Test Report" in report                       # default profile
+    assert "## Executive Summary" in report and "## Scope" in report
+    assert "## Methodology" in report and "## Findings Summary" in report
+    assert "## Detailed Findings" in report and "## Appendix" in report
+    assert "### Finding 1: Reflected XSS - search box" in report       # severity-sorted: high before low
+    assert report.index("Finding 1") < report.index("Finding 2")
+    assert "| HIGH |" in report or "HIGH" in report                    # severity surfaced in the summary table
+
+    va = generate_report(target="example.com", findings=findings, report_type="vulnerability_assessment")
+    assert "# Vulnerability Assessment Report" in va
+    assert "coverage" in va.lower() or "scanning" in va.lower()         # VA-flavored methodology text
 
 
 def test_xss_content_type_gate_avoids_false_positive():
