@@ -141,7 +141,7 @@ def scope_clear():
 _LIMITS = {
     "groq": "free: ~8k tokens/min, ~200k tokens/day (per model)",
     "gemini": "free: generous TPM, limited requests/day (varies by model)",
-    "ollama": "local: no quota — bound only by your hardware",
+    "ollama": "local: no quota - bound only by your hardware",
     "anthropic": "paid: usage-billed, no hard cap",
 }
 
@@ -223,7 +223,7 @@ def run(task: str, chat_id: str = "", mode: str = "agent"):
                 from c0mr4de.swarm.orchestrator import Swarm
                 bb = Swarm(backend=backend, on_event=on_event, should_stop=cancel.is_set).run(
                     _extract_target(task), task)
-                result = f"Swarm complete — {len(bb.findings)} finding(s) across recon/exploit/report."
+                result = f"Swarm complete - {len(bb.findings)} finding(s) across recon/exploit/report."
                 events.put({"kind": "final", "data": {"text": result}})
             else:
                 recap = chats.prior_context(chat_id) if chat_id else ""

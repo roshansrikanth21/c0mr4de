@@ -197,7 +197,7 @@ def fetch_writeup(url: str, max_chars: int = 12000) -> str:
     title, text, how = _fetch_readable(url)
     if not text or _looks_blocked(title, text):
         host = urllib.parse.urlparse(url).hostname or url
-        return (f"{host} blocked automated fetch (Cloudflare/anti-bot) — nothing usable retrieved, "
+        return (f"{host} blocked automated fetch (Cloudflare/anti-bot) - nothing usable retrieved, "
                 f"and NOT cached. Medium-hosted sources like infosecwriteups.com wall keyless "
                 f"fetching; the search titles/URLs are still useful (open in a browser), and "
                 f"fetch_writeup works on writeups hosted on GitHub, HackMD, CTFtime, or personal "

@@ -119,7 +119,7 @@ def add_osint_note(entity: str, entity_type: str, linked_to: str = "", relation:
     return f"added {entity_type} '{entity}' to the graph" + (f", linked to {linked_to}" if linked_to else "")
 
 
-# Luminous entity palette — jewel tones that glow on a deep warm-black stage.
+# Luminous entity palette - jewel tones that glow on a deep warm-black stage.
 _PALETTE = {
     "username": "#5eead4", "profile": "#7dd3fc", "url": "#c4b5fd", "email": "#fbbf24",
     "name": "#fca5a5", "phone": "#f9a8d4", "org": "#6ee7b7", "location": "#fcd34d", "domain": "#67e8f9",

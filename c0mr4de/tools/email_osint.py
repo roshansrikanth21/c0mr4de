@@ -45,7 +45,7 @@ def email_osint(email: str) -> str:
         r = subprocess.run([binary, email, "--only-used", "--no-color"],
                            capture_output=True, text=True, timeout=180)
     except subprocess.TimeoutExpired:
-        return f"holehe timed out on {email} (many sites rate-limit) — partial or none."
+        return f"holehe timed out on {email} (many sites rate-limit) - partial or none."
     except Exception as exc:  # noqa: BLE001
         return f"holehe error: {exc}"
 
@@ -64,10 +64,10 @@ def email_osint(email: str) -> str:
     if not used:
         return (f"holehe: no confirmed registrations surfaced for {email} (many sites rate-limit / hide this). "
                 f"Try username pivots and dorks instead.")
-    return (f"'behind the email' for {email} — {len(used)} site(s) where it's registered:\n"
+    return (f"'behind the email' for {email} - {len(used)} site(s) where it's registered:\n"
             + "\n".join(f"  [+] {s}" for s in used)
             + "\nAdded to the graph, linked to the email. Now pivot: derive a likely username, run "
-              "username_search, dork the email, and add_osint_note anything you infer — then render_osint_graph.")
+              "username_search, dork the email, and add_osint_note anything you infer - then render_osint_graph.")
 
 
 TOOLS = [

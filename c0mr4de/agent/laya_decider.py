@@ -1,14 +1,14 @@
-"""Laya — a local, calibrated System-1 decision engine for supervision.
+"""Laya - a local, calibrated System-1 decision engine for supervision.
 
 convaiinnovations/laya (HF) is a non-autoregressive decision model: give it a
 state + typed questions and it returns calibrated probabilities in one ~33ms
 forward pass, locally, free, and it NEVER generates text (nothing to hallucinate
-or parse). That is exactly the shape foreman's Jev has — so this is the free,
+or parse). That is exactly the shape foreman's Jev has - so this is the free,
 local "openjev" for c0mr4de's supervisor: answer "complete? off-track? stuck?
 needs-human?" as calibrated yes/no instead of spending Groq TPM on an LLM call.
 
 Optional dependency: `pip install laya` (a ~400MB checkpoint downloads on first
-use). Everything here is guarded — if laya isn't installed, `available()` is False
+use). Everything here is guarded - if laya isn't installed, `available()` is False
 and the supervisor falls back to the LLM/heuristic path. Zero-shot accuracy is
 modest; fine-tuning laya on your own past pentest decisions is where it jumps
 (their Kaggle notebook does the loop). This adapter targets the documented
@@ -38,12 +38,12 @@ def _router():
 # probability that the answer is "yes" comes back per question.
 _QUESTIONS = {
     "complete": {"type": "noul", "instructions":
-                 "Is the security task finished — a vulnerability found AND demonstrated, "
+                 "Is the security task finished - a vulnerability found AND demonstrated, "
                  "or a genuinely clean result reached only after inputs were actually tested?"},
     "off_track": {"type": "noul", "instructions":
                   "Is the agent working outside the stated mission or scope?"},
     "stuck": {"type": "noul", "instructions":
-              "Is the agent stuck — repeating actions or making no real progress?"},
+              "Is the agent stuck - repeating actions or making no real progress?"},
     "needs_human": {"type": "noul", "instructions":
                     "Does the situation need a human decision (risky/destructive action, "
                     "or ambiguous scope)?"},

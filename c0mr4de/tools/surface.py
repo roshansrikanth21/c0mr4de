@@ -1,5 +1,5 @@
 """Attack-surface tools: run the recon scanners, OR import scans you already ran,
-into one structured model — then get a clean prioritized "where is it most likely
+into one structured model - then get a clean prioritized "where is it most likely
 vulnerable" report + an interactive map, instead of scrolling raw tool spew.
 
 - import_scan(tool, source)      : parse a scan you already ran (file path or pasted text)
@@ -57,7 +57,7 @@ def _run(binary: str, image: str, flags: list[str], timeout: int) -> tuple[str, 
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         return r.stdout, r.stderr
     except subprocess.TimeoutExpired:
-        return f"{binary} timed out after {timeout}s — narrow the scope."
+        return f"{binary} timed out after {timeout}s - narrow the scope."
     except FileNotFoundError:
         return f"ERROR: could not launch {binary}."
 
@@ -201,7 +201,7 @@ def attack_surface_report() -> str:
     """Render the current accumulated attack surface (from imports/scans) to a clean
     prioritized report + interactive map, and return the summary."""
     if not _SURFACE.hosts and not _SURFACE.endpoints and not _SURFACE.findings:
-        return "attack surface is empty — run map_attack_surface(domain) or import_scan(tool, output) first."
+        return "attack surface is empty - run map_attack_surface(domain) or import_scan(tool, output) first."
     paths = write_reports(_SURFACE)
     return summarize(_SURFACE) + f"\n\nwritten: {paths}"
 

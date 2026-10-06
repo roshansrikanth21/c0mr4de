@@ -1,4 +1,4 @@
-"""Per-step tool-schema selection — send the model only the tools that matter
+"""Per-step tool-schema selection - send the model only the tools that matter
 right now, not all ~42.
 
 Why: every request ships the full tool schema set, and ~42 schemas is a big fixed
@@ -8,13 +8,13 @@ cuts the per-request floor by ~60% while keeping the loop capable.
 
 How: a small always-on CORE set + groups unlocked by keywords in the task and the
 recent context + any tool already used this run (so the visible set stays
-consistent as the run evolves). The FULL registry stays executable — trimming only
+consistent as the run evolves). The FULL registry stays executable - trimming only
 changes what the model SEES/prefers, so a tool called from memory still runs.
 Re-selected each step, so JWT tools appear once a token shows up, etc.
 Deterministic, no extra model round-trip. Disable with AgentLoop(trim_tools=False)."""
 from __future__ import annotations
 
-# Always available — the essential ReAct loop for any web engagement.
+# Always available - the essential ReAct loop for any web engagement.
 CORE = ["http_request", "crawl_site", "test_injection", "consult_knowledge",
         "recall_related", "write_report", "worklog", "read_worklog", "ask_operator",
         "browser_navigate"]

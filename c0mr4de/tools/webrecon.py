@@ -1,4 +1,4 @@
-"""Native web discovery + active injection testing — no Docker required.
+"""Native web discovery + active injection testing - no Docker required.
 
 Closes the gaps live runs exposed: without katana the agent couldn't find real
 endpoints/params, it never tested an input, and when it did it tested ONE param
@@ -8,11 +8,11 @@ and stopped. So:
 - test_injection(url): DETECTION-ONLY probes on one URL's query params.
 - test_all_params(url): crawl, then sweep test_injection across EVERY discovered
   param-bearing URL and form (GET query + POST body), aggregated. This is the
-  thorough pass — it catches form-only params (e.g. a search box) that
+  thorough pass - it catches form-only params (e.g. a search box) that
   single-URL testing misses.
 
 Non-destructive: single-quote error probe, boolean-diff, reflected-XSS marker.
-No stacked queries, time-based blind, or exfiltration — it flags leads to confirm.
+No stacked queries, time-based blind, or exfiltration - it flags leads to confirm.
 """
 from __future__ import annotations
 
@@ -173,9 +173,9 @@ def _analyze(send, base_body: str, base_len: int, orig: str, exec_url=None, cont
                 if confirmed:
                     notes.append("XSS CONFIRMED: payload EXECUTED in a real browser (deterministic proof, not a guess)")
                 elif reflected_raw:
-                    notes.append("XSS: payload reflected UN-encoded — likely reflected XSS (browser confirm inconclusive/unavailable)")
+                    notes.append("XSS: payload reflected UN-encoded - likely reflected XSS (browser confirm inconclusive/unavailable)")
                 else:
-                    notes.append("reflection: marker echoed but encoded — check context")
+                    notes.append("reflection: marker echoed but encoded - check context")
         except httpx.HTTPError:
             pass
     return notes
@@ -221,7 +221,7 @@ def _crawl(url: str, depth: int, max_pages: int):
 
 def crawl_site(url: str, depth: int = 2, max_pages: int = 40) -> str:
     """Spider a site (same host) via native HTTP: endpoints, param-bearing URLs, forms.
-    The katana fallback — needs no Docker. Follow with test_all_params to test them."""
+    The katana fallback - needs no Docker. Follow with test_all_params to test them."""
     try:
         seen, endpoints, param_urls, forms = _crawl(url, depth, max_pages)
     except PermissionError as exc:
@@ -235,10 +235,10 @@ def crawl_site(url: str, depth: int = 2, max_pages: int = 40) -> str:
         out.append(f"forms ({len(forms)}):")
         out += [f"  {f['method']} {f['action']} inputs=[{','.join(f['inputs'])}]" for f in forms[:15]]
     if param_urls:
-        out.append("URLs WITH params (prime targets — run test_all_params or test_injection):")
+        out.append("URLs WITH params (prime targets - run test_all_params or test_injection):")
         out += [f"  {u}" for u in sorted(param_urls)[:15]]
     if not param_urls and not forms:
-        out.append("no params or forms found yet — raise depth, or look at product/search/category pages.")
+        out.append("no params or forms found yet - raise depth, or look at product/search/category pages.")
     else:
         out.append("TIP: test_all_params(url) will sweep every param + form above at once.")
     return "\n".join(out)
@@ -316,7 +316,7 @@ def _test_form(form: dict) -> list[str]:
                 r = _request(build_get_url(val))
             return r.status_code, r.text
         # Browser-confirmation only makes sense for GET forms (a URL we can load);
-        # POST forms stay string-reflection-only — documented limitation.
+        # POST forms stay string-reflection-only - documented limitation.
         notes = _analyze(send, base_body, base_len, "test",
                          exec_url=build_get_url if method == "GET" else None, content_type=ctype)
         if notes:
@@ -338,14 +338,14 @@ def test_injection(url: str, param: str = "") -> str:
     except httpx.HTTPError as exc:
         return f"error: {exc}"
     if not findings:
-        return (f"tested {parts.path} params — no SQLi/XSS signal. Try test_all_params for full coverage, "
+        return (f"tested {parts.path} params - no SQLi/XSS signal. Try test_all_params for full coverage, "
                 f"other contexts, or OOB (oob_start).")
     return "likely-vulnerable:\n  " + "\n  ".join(findings) + "\nConfirm before reporting (detection only)."
 
 
 def test_all_params(url: str, depth: int = 2, max_targets: int = 30) -> str:
     """Crawl the site, then sweep injection tests across EVERY discovered param-bearing
-    URL and form (GET + POST). The thorough pass — catches form-only params single-URL
+    URL and form (GET + POST). The thorough pass - catches form-only params single-URL
     testing misses. Detection-only + non-destructive; bounded by max_targets."""
     try:
         seen, endpoints, param_urls, forms = _crawl(url, depth, max(20, max_targets))
@@ -355,7 +355,7 @@ def test_all_params(url: str, depth: int = 2, max_targets: int = 30) -> str:
         return f"crawl error: {exc}"
     findings: list[str] = []
     tested = 0
-    # Forms first — they're the highest-signal inputs (search boxes, logins) and there
+    # Forms first - they're the highest-signal inputs (search boxes, logins) and there
     # are few of them; testing param-URLs first can burn the budget on junk asset links.
     for f in forms:
         if tested >= max_targets:
@@ -380,7 +380,7 @@ def test_all_params(url: str, depth: int = 2, max_targets: int = 30) -> str:
                 "authenticated areas, or header injection.")
     uniq = list(dict.fromkeys(findings))
     return (header + f" LIKELY-VULNERABLE ({len(uniq)}):\n  " + "\n  ".join(uniq) +
-            "\nConfirm each before reporting (detection only — no exploitation/exfiltration).")
+            "\nConfirm each before reporting (detection only - no exploitation/exfiltration).")
 
 
 TOOLS = [
@@ -407,7 +407,7 @@ TOOLS = [
     Tool(
         name="test_all_params",
         description=("Crawl a site and sweep injection tests across EVERY discovered param and form (GET query "
-                     "+ POST body) in one call — the thorough pass that catches form-only params (e.g. a search "
+                     "+ POST body) in one call - the thorough pass that catches form-only params (e.g. a search "
                      "box) single-URL testing misses. Detection-only, non-destructive, bounded by max_targets."),
         parameters={"type": "object", "properties": {
             "url": {"type": "string"}, "depth": {"type": "integer"}, "max_targets": {"type": "integer"}},

@@ -38,7 +38,7 @@ _PLAN_SIGNALS = ("```", "let's", "we will", "we should", "next step", "step 1", 
 
 # Tools that constitute actually TESTING an input (not just discovery). Concluding
 # "nothing found" without any of these is the "gave up shallow" failure a live run
-# exposed — crawling alone is not testing, so it must not satisfy the gate.
+# exposed - crawling alone is not testing, so it must not satisfy the gate.
 _EFFORT_TOOLS = ("test_injection", "sqlmap", "tamper_jwt", "fuzz_param", "oob_poll", "nuclei_scan")
 _NEGATIVE_SIGNALS = ("no vuln", "no exploitable", "no exploit", "nothing found", "no findings",
                      "not vulnerable", "no obvious", "found nothing", "no issues", "no direct impact",
@@ -170,13 +170,13 @@ class AgentLoop:
             if not response.tool_calls:
                 # An EMPTY reply (no text, no tool calls) is almost always a free-tier
                 # rate-limit/TPM hit (Groq returns empty at the 8000 TPM ceiling), not a
-                # real conclusion. Don't silently end — trim harder and retry a couple times.
+                # real conclusion. Don't silently end - trim harder and retry a couple times.
                 if not (response.text or "").strip():
                     if empty_retries > 0:
                         empty_retries -= 1
                         if self.verbose:
-                            print("  !! empty reply (likely TPM/rate-limit) — trimming context and retrying")
-                        self.on_event("supervisor", {"action": "retry", "text": "empty reply — retrying"})
+                            print("  !! empty reply (likely TPM/rate-limit) - trimming context and retrying")
+                        self.on_event("supervisor", {"action": "retry", "text": "empty reply - retrying"})
                         # aggressively shrink history so the next request fits the token budget
                         messages = _trim_history(messages, keep_full=2, old_cap=120)
                         messages.append({"role": "user", "content":
@@ -184,7 +184,7 @@ class AgentLoop:
                         self.log.append(step_log)
                         continue
                     self.log.append(step_log)
-                    msg = ("Run ended on repeated empty replies — likely the free-tier token/min ceiling. "
+                    msg = ("Run ended on repeated empty replies - likely the free-tier token/min ceiling. "
                            "Re-run with fewer tools, a paid/higher-TPM key, or a shorter task.")
                     self.on_event("final", {"text": msg})
                     return msg
@@ -216,7 +216,7 @@ class AgentLoop:
                         and not _effort_spent()):
                     gate_used = True
                     if self.verbose:
-                        print("  ~~ completion gate: concluded 'nothing' without testing — pushing to dig")
+                        print("  ~~ completion gate: concluded 'nothing' without testing - pushing to dig")
                     self.on_event("supervisor", {"action": "gate", "text": "completion gate: dig before concluding"})
                     messages.append({"role": "assistant", "content": response.text})
                     messages.append({"role": "user", "content": (
@@ -246,7 +246,7 @@ class AgentLoop:
                     # Cap a single tool result so a big dump (e.g. crawl_site's endpoint
                     # list) can't blow the free-tier token/min budget and cause empty replies.
                     if len(result) > 2600:
-                        result = result[:2600] + "\n...[truncated to protect the token budget — narrow the query or read specifics]"
+                        result = result[:2600] + "\n...[truncated to protect the token budget - narrow the query or read specifics]"
                     if self.verbose:
                         preview = result if len(result) < 500 else result[:500] + "... (truncated)"
                         print(f"  <- {preview}")

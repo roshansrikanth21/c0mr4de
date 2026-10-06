@@ -1,13 +1,11 @@
 """A lightweight semantic supervisor for the agent loop.
 
-Inspired by thruwire/foreman's idea — an independent watcher above the working
-agent that asks "is it stuck? looping? off-track? done?" and steers or stops —
-but WITHOUT foreman's dependencies (no TypeSafe Jev model, no Codex/OpenCode
+Inspired by thruwire/foreman's idea - an independent watcher above the working
+agent that asks "is it stuck? looping? off-track? done?" and steers or stops - but WITHOUT foreman's dependencies (no TypeSafe Jev model, no Codex/OpenCode
 workers). It runs on cheap deterministic signals over c0mr4de's own step log,
 with an optional LLM completion check using the loop's existing backend.
 
-Why deterministic-first: the failure modes we actually observed are mechanical —
-the same tool called twice with no change (loop), or a tool erroring/unavailable
+Why deterministic-first: the failure modes we actually observed are mechanical - the same tool called twice with no change (loop), or a tool erroring/unavailable
 and being retried (stuck). Those are caught reliably and for free; we don't need
 a model to tell us the agent repeated itself. The LLM check is opt-in for the
 softer "are we done / off the mission?" judgment.
@@ -48,7 +46,7 @@ class Supervisor:
             self.used += 1
             return ("steer",
                     "SUPERVISOR: you repeated the exact same tool call(s) with no change and no new "
-                    "result. Stop looping — change the inputs, try a DIFFERENT tool, or if you've "
+                    "result. Stop looping - change the inputs, try a DIFFERENT tool, or if you've "
                     "already confirmed there's nothing there, move on and write_report with what you have.")
 
         # STUCK: the tools in the last two steps all errored / were unavailable.
@@ -56,22 +54,21 @@ class Supervisor:
             self.used += 1
             return ("steer",
                     "SUPERVISOR: the tools you're calling keep failing or are unavailable here. Do NOT "
-                    "retry the same failing tool — switch to one that works (http_request, fuzz_paths, "
+                    "retry the same failing tool - switch to one that works (http_request, fuzz_paths, "
                     "consult_knowledge) or a different approach, and note the tool gap in your report.")
 
         # THRASH: three straight steps that ran tools but produced only errors.
         if len(log) >= 3 and all(_all_errors(s) for s in log[-3:]):
             self.used += 1
             return ("stop",
-                    "SUPERVISOR: three straight steps produced only tool errors — no progress is being "
+                    "SUPERVISOR: three straight steps produced only tool errors - no progress is being "
                     "made. Stop probing now and write_report with what you have and the tool gaps you hit.")
         return None
 
 
 def assess_completion(backend, task: str, recent_text: str) -> dict:
-    """OPTIONAL semantic check (foreman-style typed questions). Prefers Laya — a
-    local, calibrated decision model (free, ~33ms, no hallucination, no Groq TPM) —
-    and falls back to the loop's own LLM backend if laya isn't installed. Returns
+    """OPTIONAL semantic check (foreman-style typed questions). Prefers Laya - a
+    local, calibrated decision model (free, ~33ms, no hallucination, no Groq TPM) - and falls back to the loop's own LLM backend if laya isn't installed. Returns
     {'complete': bool, 'off_track': bool, 'reason': str}. Best-effort: any failure
     yields a neutral verdict so it never breaks a run."""
     from c0mr4de.agent import laya_decider

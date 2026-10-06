@@ -61,7 +61,7 @@ def nuclei_scan(target: str, severity: str = "critical,high,medium", tags: str =
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=_TIMEOUT)
     except subprocess.TimeoutExpired:
-        return f"nuclei timed out after {_TIMEOUT}s — narrow the scan with tags= or a tighter severity=."
+        return f"nuclei timed out after {_TIMEOUT}s - narrow the scan with tags= or a tighter severity=."
     except FileNotFoundError:
         return "ERROR: could not launch nuclei (docker/binary missing)."
 
@@ -89,7 +89,7 @@ def nuclei_scan(target: str, severity: str = "critical,high,medium", tags: str =
     findings.sort(key=lambda f: order.get(f["severity"], 5))
     lines = [f"nuclei: {len(findings)} match(es) on {target}"]
     for f in findings[:40]:
-        lines.append(f"  [{f['severity'].upper()}] {f['id']} — {f['name']}  @ {f['matched']}")
+        lines.append(f"  [{f['severity'].upper()}] {f['id']} - {f['name']}  @ {f['matched']}")
     return "\n".join(lines)
 
 

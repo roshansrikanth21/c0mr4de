@@ -11,8 +11,8 @@ per line, in the natural Laya shape:
      "question": {"type": "score", "instructions": "...", "criteria": [...]},
      "answer": "high", "source": "pixstech"}
 
-HONEST NOTE: fine-tuning a 400M model needs hundreds–thousands of decisions; a
-handful of reports yields dozens. This is the PIPELINE — run every finished report
+HONEST NOTE: fine-tuning a 400M model needs hundreds - thousands of decisions; a
+handful of reports yields dozens. This is the PIPELINE - run every finished report
 through it as the vault grows, curate, then fine-tune on Kaggle (see the runner
 printed by `c0mr4de laya-dataset`). Reports vary in format, so treat the output as
 a draft to review, not gospel.
@@ -28,7 +28,7 @@ _SEV_Q = {"type": "score", "instructions": "How severe is this finding?", "crite
 _VULN_Q = {"type": "noul", "instructions": "Is this a real, exploitable security weakness (yes) "
            "rather than an accepted/positive control (no)?"}
 
-_SEV_RE = re.compile(r"\*\*Severity:\*\*\s*([A-Za-z/ –-]+)", re.I)
+_SEV_RE = re.compile(r"\*\*Severity:\*\*\s*([A-Za-z/ - -]+)", re.I)
 _FINDING_HDR = re.compile(r"^#{2,4}\s+(F-?\d+[^\n]*)", re.M)
 _POSITIVE = re.compile(r"positive|keep these|good\)|controls observed", re.I)
 _NOISE = re.compile(r"\*\*(Severity|CVSS[^:]*|Confidence)[^\n]*\n?", re.I)
@@ -130,7 +130,7 @@ def main() -> None:
     print("\nHONEST: this is pipeline output, not a trained model. A few reports = dozens of rows; "
           "real fine-tuning wants hundreds. Grow it by running every finished report through this, "
           "curate the labels, then train on GPU:")
-    print("  1) review/curate the JSONL (labels are auto-extracted — fix any wrong severities)")
+    print("  1) review/curate the JSONL (labels are auto-extracted - fix any wrong severities)")
     print("  2) Laya fine-tune notebook (free Kaggle 2xT4): https://nandhakishorm.github.io/laya/  -> Fine-tuning")
     print("  3) push the fine-tuned checkpoint; point laya_decider at it. Expected lift ~0.36 -> ~0.77.")
 

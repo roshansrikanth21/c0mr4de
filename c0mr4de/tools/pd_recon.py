@@ -41,7 +41,7 @@ def _run(binary: str, image: str, flags: list[str], install_hint: str) -> str:
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=_TIMEOUT)
     except subprocess.TimeoutExpired:
-        return f"{binary} timed out after {_TIMEOUT}s — narrow the scope."
+        return f"{binary} timed out after {_TIMEOUT}s - narrow the scope."
     except FileNotFoundError:
         return f"ERROR: could not launch {binary}."
     return r.stdout, r.stderr  # type: ignore[return-value]

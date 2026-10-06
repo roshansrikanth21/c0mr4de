@@ -96,7 +96,7 @@ def main() -> None:
             k, _, v = args.auth_header.partition(":")
             hdrs[k.strip()] = v.strip()
         auth.set_auth(args.auth_host, cookie=getattr(args, "auth_cookie", ""), headers=hdrs)
-        print(f"[auth] session set for {args.auth_host} — tools will operate as the logged-in user there")
+        print(f"[auth] session set for {args.auth_host} - tools will operate as the logged-in user there")
 
     # apply rules of engagement / scope
     if getattr(args, "in_scope", "") or getattr(args, "out_scope", "") or getattr(args, "focus", ""):
@@ -105,7 +105,7 @@ def main() -> None:
             in_scope=[s for s in getattr(args, "in_scope", "").split(",") if s.strip()],
             out_of_scope=[s for s in getattr(args, "out_scope", "").split(",") if s.strip()],
             focus=getattr(args, "focus", ""))
-        print("[scope] rules of engagement set — out-of-scope hosts will be blocked")
+        print("[scope] rules of engagement set - out-of-scope hosts will be blocked")
 
     if args.command == "swarm":
         from c0mr4de.swarm.orchestrator import Swarm

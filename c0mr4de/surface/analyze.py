@@ -133,7 +133,7 @@ def summarize(surf: AttackSurface, top: int = 12) -> str:
     """One clean text block: stats, the ranked likely-vulnerable list, findings by severity."""
     st = surf.stats()
     ranked = prioritize(surf)
-    out = [f"ATTACK SURFACE — {surf.domain or '(target)'}",
+    out = [f"ATTACK SURFACE - {surf.domain or '(target)'}",
            f"  hosts={st['hosts']}  endpoints={st['endpoints']}  open_ports={st['open_ports']}  findings={st['findings']}",
            ""]
     if ranked:
@@ -153,5 +153,5 @@ def summarize(surf: AttackSurface, top: int = 12) -> str:
             if by_sev[s]:
                 out.append(f"  {s.upper()} ({len(by_sev[s])}):")
                 for f in by_sev[s][:8]:
-                    out.append(f"     {f.ident} — {f.name}  @ {f.location}  [{f.source}]")
+                    out.append(f"     {f.ident} - {f.name}  @ {f.location}  [{f.source}]")
     return "\n".join(out)

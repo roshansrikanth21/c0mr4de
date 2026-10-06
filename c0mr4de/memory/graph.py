@@ -1,10 +1,10 @@
-"""Knowledge graph layer over c0mr4de's memory — the relational recall that flat
+"""Knowledge graph layer over c0mr4de's memory - the relational recall that flat
 vector RAG can't do.
 
 Inspiration taken from graph-memory tools (OpenGlean/GraphRAG/mem0) WITHOUT their
 weight: no Neo4j, no separate DB, no extraction LLM. The vector store (consult_
 knowledge) stays the primary retriever for "what's similar"; this adds "what's
-CONNECTED" — a light graph built from the markdown c0mr4de already has:
+CONNECTED" - a light graph built from the markdown c0mr4de already has:
 
   - `[[wikilinks]]`  -> doc<->doc edges (preserves the vault links that ingest
                        otherwise flattens into plain text and discards)
@@ -177,18 +177,17 @@ def _graph() -> KnowledgeGraph:
 
 def recall_related(topic: str) -> str:
     """Graph recall: given a topic (a bug class, technique, target, or playbook name),
-    return the CONNECTED memories — playbooks, past engagements, and related concepts —
-    that flat similarity search would miss. Complements consult_knowledge."""
+    return the CONNECTED memories - playbooks, past engagements, and related concepts - that flat similarity search would miss. Complements consult_knowledge."""
     g = _graph()
     if not g.nodes:
-        return "knowledge graph empty — need playbooks/ + pentest-vault/ (and optionally the vault)."
+        return "knowledge graph empty - need playbooks/ + pentest-vault/ (and optionally the vault)."
     hits = g.related(topic)
     if not hits:
         return (f"no graph node matches '{topic}'. Try a bug class (SSRF, IDOR, JWT), a technique, or a "
                 f"playbook/engagement name. Use consult_knowledge for free-text similarity search.")
     docs = [n for n, k, _ in hits if k == "doc"]
     concepts = [n for n, k, _ in hits if k == "concept"]
-    out = [f"graph recall for '{topic}' — {len(hits)} connected nodes:"]
+    out = [f"graph recall for '{topic}' - {len(hits)} connected nodes:"]
     if docs:
         out.append("  related memories/playbooks:")
         out += [f"    - {n}" for n in docs[:15]]

@@ -95,7 +95,7 @@ def oob_start() -> str:
             break
         time.sleep(0.3)
     if not _state["domain"]:
-        return "OOB client started but no callback domain yet — retry oob_start() shortly, or check connectivity to interact.sh."
+        return "OOB client started but no callback domain yet - retry oob_start() shortly, or check connectivity to interact.sh."
     return (f"OOB session active. Callback domain: {_state['domain']}\n"
             f"Inject it into payloads (e.g. http://{_state['domain']}/x as an SSRF url, or an XXE entity), "
             f"send with http_request, then call oob_poll() to see if the server called back.")
@@ -103,12 +103,12 @@ def oob_start() -> str:
 
 def oob_poll() -> str:
     if not _state["domain"]:
-        return "No OOB session — call oob_start() first."
+        return "No OOB session - call oob_start() first."
     with _lock:
         hits = list(_state["interactions"])
     if not hits:
         return f"No interactions yet on {_state['domain']}. If you've sent a payload, give it a few seconds and poll again."
-    lines = [f"{len(hits)} OOB interaction(s) on {_state['domain']} — the target's server called back (blind vuln confirmed):"]
+    lines = [f"{len(hits)} OOB interaction(s) on {_state['domain']} - the target's server called back (blind vuln confirmed):"]
     for h in hits[-20:]:
         lines.append(f"  [{h['protocol'].upper()}] from {h['source']}  {h['time']}")
     return "\n".join(lines)

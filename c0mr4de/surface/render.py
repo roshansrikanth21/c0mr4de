@@ -16,7 +16,7 @@ _SEV_COLOR = {"critical": "#f2555a", "high": "#f2884b", "medium": "#e0b341",
 def to_markdown(surf: AttackSurface) -> str:
     ranked = prioritize(surf)
     st = surf.stats()
-    md = [f"# Attack Surface — {surf.domain or '(target)'}", "",
+    md = [f"# Attack Surface - {surf.domain or '(target)'}", "",
           f"`{st['hosts']} hosts · {st['endpoints']} endpoints · {st['open_ports']} open ports · {st['findings']} findings`", ""]
 
     md.append("## Most likely vulnerable")
@@ -37,12 +37,12 @@ def to_markdown(surf: AttackSurface) -> str:
             if fs:
                 md.append(f"### {sev.upper()} ({len(fs)})")
                 for f in fs:
-                    md.append(f"- **{f.ident}** {f.name} — `{f.location}` _({f.source})_")
+                    md.append(f"- **{f.ident}** {f.name} - `{f.location}` _({f.source})_")
         md.append("")
 
     md.append("## Hosts & open ports")
     for h in sorted(surf.hosts.values(), key=lambda x: x.host):
-        ports = ", ".join(f"{p} {s}".strip() for p, s in sorted(h.ports.items())) or "—"
+        ports = ", ".join(f"{p} {s}".strip() for p, s in sorted(h.ports.items())) or " - "
         ips = ", ".join(sorted(h.ips)) or "?"
         md.append(f"- `{h.host}` → {ips} · ports: {ports}")
     md.append("")
@@ -50,12 +50,12 @@ def to_markdown(surf: AttackSurface) -> str:
     md.append("## Web endpoints")
     for e in sorted(surf.endpoints.values(), key=lambda x: (x.status or 999, x.url)):
         tech = f" [{', '.join(e.tech)}]" if e.tech else ""
-        md.append(f"- `{e.status or '?'}` {e.url}{tech}" + (f" — {e.title[:60]}" if e.title else ""))
+        md.append(f"- `{e.status or '?'}` {e.url}{tech}" + (f" - {e.title[:60]}" if e.title else ""))
     return "\n".join(md)
 
 
 _GRAPH_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>c0mr4de attack surface — {domain}</title>
+<title>c0mr4de attack surface - {domain}</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.js"></script>
 <style>
  body{{margin:0;background:#0a0c10;color:#d7dce5;font-family:ui-monospace,Consolas,monospace}}
@@ -86,7 +86,7 @@ def to_graph_html(surf: AttackSurface) -> str:
     for h in surf.hosts.values():
         risk = ranked.get(h.host, 0)
         color = "#f2555a" if risk >= 55 else "#e0b341" if risk >= 25 else "#4ade80"
-        ports = ",".join(str(p) for p in sorted(h.ports)) or "—"
+        ports = ",".join(str(p) for p in sorted(h.ports)) or " - "
         nodes.append({"id": h.host, "label": h.host, "color": color, "value": 6 + risk,
                       "title": f"{h.host}\\nips: {', '.join(sorted(h.ips)) or '?'}\\nports: {ports}\\nrisk: {risk}"})
         edges.append({"from": root, "to": h.host})
