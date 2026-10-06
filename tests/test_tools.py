@@ -254,6 +254,83 @@ def test_surface_parses_messy_output_and_prioritizes():
     assert ".git" in reasons and "critical" in reasons
 
 
+def test_read_file_flags_binary_instead_of_garbling_it(tmp_path=None):
+    # Regression: a binary .seb (Safe Exam Browser) config starts with a short ASCII
+    # mode marker ("pswd") immediately followed by encrypted bytes. The old
+    # read_text(errors="replace") mis-decoded that into mojibake that LOOKED like a
+    # readable password sitting right after "pswd", and the agent reported it as a
+    # confirmed cleartext-credential finding. It was ciphertext, not a password.
+    import os
+    from c0mr4de.tools.files import WORKSPACE, read_file
+
+    binary = b"\x00\x01pswd" + os.urandom(200) + b"\xff\xfe\x00\x01"
+    target = WORKSPACE / "_test_binary_seb.bin"
+    target.write_bytes(binary)
+    try:
+        out = read_file("_test_binary_seb.bin")
+    finally:
+        target.unlink(missing_ok=True)
+    assert "BINARY FILE" in out
+    assert "do not decode it as UTF-8" in out
+    assert "not evidence of anything without actually parsing the format" in out
+    # must NOT hand back a plausible-looking decoded string for the model to eyeball
+    assert "�" not in out  # no raw UTF-8-replace mojibake leaking through
+
+
+def test_report_findings_default_to_unverified():
+    # Regression: write_report previously rendered every finding as a flat assertion
+    # with no confidence signal, so a model's unconfirmed claim (e.g. "the plaintext
+    # password was extracted") read exactly as authoritative as a tool-confirmed one.
+    findings = [
+        {"title": "Claimed cleartext password", "severity": "critical", "category": "Info disclosure",
+         "description": "A model-asserted finding with no verified flag set."},
+        {"title": "Execution-confirmed XSS", "severity": "high", "category": "XSS",
+         "description": "Confirmed via confirm_xss_exec.", "verified": True},
+    ]
+    report = generate_report(target="example.com", findings=findings)
+    assert "UNVERIFIED - based on static or manual analysis" in report
+    assert "VERIFIED - confirmed by a deterministic tool" in report
+    # the unverified finding's own detail section must carry the warning (not just
+    # exist somewhere else in the doc) - locate it via the "Finding N:" header, not
+    # the summary table, since both titles also appear there
+    unverified_section = report[report.index("### Finding 1: Claimed cleartext password"):
+                                 report.index("### Finding 2: Execution-confirmed XSS")]
+    assert "UNVERIFIED" in unverified_section
+    assert "No - unconfirmed" in report  # summary table column
+
+
+def test_request_rechecks_scope_across_redirects():
+    # Regression: _request followed httpx auto-redirects without re-checking scope, so a
+    # 3xx from an in-scope host to an out-of-scope one (real case: an app's "Sign up with
+    # Google" button -> accounts.google.com) sent our traffic, incl. payloads, off-scope.
+    import httpx as _httpx
+    from c0mr4de.tools import web
+    scope.clear_scope()
+    scope.set_scope(in_scope=["example.com"], out_of_scope=["accounts.google.com"])
+    calls = []
+
+    def fake_request(method, url, **kw):
+        calls.append(url)
+        if "example.com" in url:
+            return _httpx.Response(302, headers={"location": "https://accounts.google.com/signin"})
+        return _httpx.Response(200, text="SHOULD NOT BE REACHED")
+
+    orig = web.httpx.request
+    web.httpx.request = fake_request
+    try:
+        raised = False
+        try:
+            web._request("http://example.com/login")
+        except PermissionError:
+            raised = True
+        assert raised, "a redirect to an out-of-scope host must raise, not be followed"
+        assert not any("accounts.google.com" in c for c in calls), \
+            "no HTTP request may be sent to the out-of-scope redirect target"
+    finally:
+        web.httpx.request = orig
+        scope.clear_scope()
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     passed = 0

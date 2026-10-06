@@ -76,6 +76,17 @@ def _san_all(obj):
     return obj
 
 
+def _coerce_text(value) -> str:
+    """A model may pass a per-finding field (steps_to_reproduce, technical_details,
+    etc.) as a list of strings instead of one string - e.g. numbered steps as
+    separate array items. Normalize either shape to a single string so report
+    assembly never breaks on a type mismatch (this is what previously raised
+    "sequence item N: expected str instance, list found" out of str.join)."""
+    if isinstance(value, list):
+        return "\n".join(_coerce_text(v) for v in value)
+    return str(value)
+
+
 def _toc(sections: list[str]) -> str:
     lines = ["## Table of Contents", ""]
     for i, s in enumerate(sections, 1):
@@ -211,10 +222,11 @@ def generate_report(
     # ---- Findings summary table ----
     out += ["## Findings Summary", ""]
     if findings:
-        out += ["| # | Title | Severity | Component |", "|---|---|---|---|"]
+        out += ["| # | Title | Severity | Verified | Component |", "|---|---|---|---|---|"]
         for i, f in enumerate(findings, 1):
+            verified = "Yes" if f.get("verified") is True else "No - unconfirmed"
             out.append(f"| {i} | {f.get('title', 'Untitled')} | {str(f.get('severity', 'info')).upper()} | "
-                       f"{f.get('affected_component') or f.get('location') or '-'} |")
+                       f"{verified} | {f.get('affected_component') or f.get('location') or '-'} |")
     else:
         out.append("No findings were confirmed during this assessment.")
     out += ["", "---", ""]
@@ -239,18 +251,27 @@ def generate_report(
         if f.get("likelihood"):
             out.append(f"| **Likelihood** | {f['likelihood']} |")
         out.append("")
+        if f.get("verified") is True:
+            out.append("**Verification status:** VERIFIED - confirmed by a deterministic tool "
+                       "(execution, timing, or response-diff based check), not narrative alone.")
+        else:
+            out.append("**Verification status:** UNVERIFIED - based on static or manual analysis; "
+                       "not independently confirmed by a deterministic tool. Treat as a lead requiring "
+                       "manual confirmation, not a confirmed finding.")
+        out.append("")
         for label, key, code in (
             ("Description", "description", False), ("Technical Details", "technical_details", False),
             ("Steps to Reproduce", "steps_to_reproduce", False), ("Proof of Concept", "proof_of_concept", True),
             ("Impact", "impact", False), ("Remediation", "remediation", False),
         ):
             if f.get(key):
+                text = _coerce_text(f[key])
                 out.append(f"**{label}**")
                 out.append("")
                 if code:
-                    out += ["```", f[key], "```"]
+                    out += ["```", text, "```"]
                 else:
-                    out.append(f[key])
+                    out.append(text)
                 out.append("")
         if f.get("references"):
             refs = f["references"]

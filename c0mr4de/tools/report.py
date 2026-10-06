@@ -23,7 +23,12 @@ def write_report(target: str, findings_json: str, summary: str = "", positives: 
     """findings_json: a JSON array of objects with keys: title, severity, category,
     description, steps_to_reproduce, proof_of_concept, impact, remediation,
     references (all strings; cvss_score/cvss_vector/affected_component/likelihood/
-    references optional). report_type: 'pentest' or 'vulnerability_assessment'."""
+    references optional). report_type: 'pentest' or 'vulnerability_assessment'.
+    verified (bool, optional): set True ONLY if a deterministic tool actually
+    confirmed this (execution-confirmed XSS, timing/boolean-diff-confirmed SQLi,
+    an HTTP status/response you observed directly, etc.) - not because the model
+    reasoned it was plausible from reading a file or a response body. Omit/False
+    renders as UNVERIFIED in the report, which is the honest default."""
     try:
         findings = json.loads(findings_json)
     except json.JSONDecodeError as exc:
@@ -73,7 +78,11 @@ TOOLS = [
             "cvss_score, cvss_vector (both optional - skip CVSS unless explicitly asked for), "
             "affected_component, likelihood, description, technical_details, steps_to_reproduce "
             "(mandatory in practice), proof_of_concept (mandatory in practice), impact, remediation, "
-            "references (string or list)."
+            "references (string or list), verified (bool - set True ONLY when a deterministic tool "
+            "actually confirmed the finding, e.g. confirm_xss_exec fired, a timing/boolean-diff SQLi "
+            "check passed, an HTTP response you observed directly proves it - NOT because the finding "
+            "sounds plausible from reading a file or response body. Default/omitted renders as "
+            "UNVERIFIED in the report; do not mark something verified to make the report look stronger)."
         ),
         parameters={
             "type": "object",

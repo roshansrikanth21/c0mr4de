@@ -41,15 +41,39 @@ def _scope_auth(url: str, hdrs: dict) -> tuple[dict, bool]:
     return hdrs, authed
 
 
+_MAX_REDIRECTS = 5
+
+
 def _request(url: str, method: str = "GET", hdrs: dict | None = None, body: str = "") -> httpx.Response:
     """Low-level request with scope + auth applied. Raises on scope block / HTTP error.
-    Shared by http_request, the crawler, and the injection tester."""
+    Shared by http_request, the crawler, and the injection tester.
+
+    Redirects are followed MANUALLY so scope is re-checked on every hop: httpx's
+    follow_redirects would chase a 3xx to an out-of-scope host (a real case: an
+    in-scope app's "Sign up with Google" button 302s to accounts.google.com) and
+    send our traffic - including injection payloads - off-scope with no re-check.
+    Auth is recomputed per hop, so a stored session cookie never rides a redirect
+    to a different host."""
     from c0mr4de import scope
-    if scope.check(url) == "out":
-        raise PermissionError(f"{url} is OUT OF SCOPE per the rules of engagement")
-    hdrs, _ = _scope_auth(url, dict(hdrs or {}))
-    return httpx.request(method.upper(), url, headers=hdrs, content=body or None,
-                         timeout=20, follow_redirects=True)
+    cur, seen = url, set()
+    resp = None
+    for _ in range(_MAX_REDIRECTS + 1):
+        if scope.check(cur) == "out":
+            raise PermissionError(f"{cur} is OUT OF SCOPE per the rules of engagement")
+        req_hdrs, _ = _scope_auth(cur, dict(hdrs or {}))
+        resp = httpx.request(method.upper(), cur, headers=req_hdrs, content=body or None,
+                             timeout=20, follow_redirects=False)
+        loc = resp.headers.get("location")
+        if not (resp.is_redirect and loc):
+            return resp
+        nxt = urllib.parse.urljoin(cur, loc)
+        if nxt in seen:
+            return resp                      # redirect loop - stop, return what we have
+        seen.add(nxt)
+        if resp.status_code in (301, 302, 303) and method.upper() not in ("GET", "HEAD"):
+            method, body = "GET", ""         # RFC: method switches to GET, body dropped
+        cur = nxt
+    return resp                              # hit the redirect cap
 
 
 def extract_surface(html: str, base_url: str, same_host_only: bool = True) -> dict:
