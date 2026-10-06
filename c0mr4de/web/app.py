@@ -252,6 +252,42 @@ def run(task: str, chat_id: str = "", mode: str = "agent"):
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
+_REPORT_RE = re.compile(r"^report-[^/\\]+\.md$")
+
+
+def _safe_report_path(name: str) -> Path:
+    if not _REPORT_RE.match(name):
+        raise ValueError("invalid report name")
+    p = (WORKSPACE / name).resolve()
+    if p.parent != WORKSPACE.resolve() or not p.is_file():
+        raise ValueError("not found")
+    return p
+
+
+@app.get("/reports")
+def reports_list():
+    files = sorted(WORKSPACE.glob("report-*.md"), key=lambda f: f.stat().st_mtime, reverse=True)
+    return [{"name": f.name, "mtime": f.stat().st_mtime, "size": f.stat().st_size} for f in files]
+
+
+@app.get("/reports/{name}")
+def reports_get(name: str):
+    try:
+        p = _safe_report_path(name)
+    except ValueError:
+        return {"error": "not found"}
+    return {"name": name, "content": p.read_text(encoding="utf-8", errors="replace")}
+
+
+@app.get("/reports/{name}/download")
+def reports_download(name: str):
+    try:
+        p = _safe_report_path(name)
+    except ValueError:
+        return {"error": "not found"}
+    return FileResponse(str(p), media_type="text/markdown", filename=name)
+
+
 @app.get("/osint/latest")
 def osint_latest():
     """Path of the most recent OSINT graph, for the UI to embed."""
