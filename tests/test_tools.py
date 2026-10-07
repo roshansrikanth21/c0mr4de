@@ -331,6 +331,27 @@ def test_request_rechecks_scope_across_redirects():
         scope.clear_scope()
 
 
+def test_audit_source_flags_vuln_not_clean(tmp_path=None):
+    import tempfile
+    from pathlib import Path
+    from c0mr4de.tools.sourceaudit import audit_source
+    d = Path(tempfile.mkdtemp())
+    (d / "vuln.py").write_text(
+        "import os\nfrom flask import request\n"
+        "def search():\n"
+        "    q = request.args.get('q')\n"
+        "    cursor.execute('SELECT * FROM items WHERE name=' + q)\n"
+        "    os.system('ping ' + request.args.get('host'))\n")
+    (d / "clean.py").write_text("def add(a, b):\n    return a + b\n")
+    out = audit_source(str(d))
+    assert "SQL injection" in out and "vuln.py" in out          # true positive: SQLi flagged
+    assert "Command injection" in out                           # true positive: RCE flagged
+    assert "clean.py" not in out                                # true negative: clean file silent
+    assert "Not proof of exploitability" in out                 # honest framing, not a confirmed finding
+    # ranked most-dangerous first: command injection before SQLi
+    assert out.index("Command injection") < out.index("SQL injection")
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     passed = 0
