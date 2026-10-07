@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  @property --beam{syntax:'<angle>';initial-value:0deg;inherits:false}
   :root{
     /* warm IDE palette: flat, low-contrast, one accent used sparingly */
     --bg:#16130e; --surface:#1b1711; --surface2:#211c15; --raised:#282118; --raised2:#30281d;
@@ -38,8 +39,13 @@
   .brand .live{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none;animation:pulse 2.2s ease-in-out infinite}
   .brand .live.on{animation:pulse 1.1s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-  .brand .mark{font-family:var(--mono);font-weight:600;font-size:16px;letter-spacing:-.01em;color:var(--txt)}
-  .brand .mark b{color:var(--accent);font-weight:600}
+  .brand .mark{font-family:var(--mono);font-weight:600;font-size:16px;letter-spacing:-.01em;
+    background:linear-gradient(100deg,#6b4423,#e9b784,#ff8a4d,#caa06a,#fff0dd,#a9712f,#6b4423);
+    background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:metal 6s linear infinite}
+  .brand .mark b{color:inherit;font-weight:600}
+  @keyframes metal{to{background-position:300% 0}}
+  @media (prefers-reduced-motion:reduce){.brand .mark{animation:none}}
   .brand .tag{margin-left:auto;font-size:10px;color:var(--faint);font-family:var(--mono)}
 
   #new{margin:2px 12px 10px;padding:9px 12px;border:1px solid var(--line2);border-radius:var(--r-sm);
@@ -92,7 +98,14 @@
   .act-bar::before{content:'';position:absolute;top:0;height:100%;width:30%;background:var(--accent);
     animation:slide 1.25s var(--ease) infinite}
   @keyframes slide{0%{left:-32%}100%{left:100%}}
-  .act-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none;animation:pulse 1.1s ease-in-out infinite}
+  .act-orb{width:24px;height:24px;flex:none;display:block}
+  #activity.on:not(.done) .act-inner::after{content:'';position:absolute;inset:0;border-radius:var(--r);padding:1px;
+    background:conic-gradient(from var(--beam),transparent 0deg 300deg,var(--accent) 342deg,#ffd9b8 360deg);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
+    mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;
+    animation:beam 2.6s linear infinite;pointer-events:none}
+  @keyframes beam{to{--beam:360deg}}
+  @media (prefers-reduced-motion:reduce){#activity.on:not(.done) .act-inner::after{animation:none;opacity:.35}}
   .act-main{flex:1;min-width:0}
   .act-text{font-family:var(--mono);font-size:13px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .caret{display:inline-block;width:7px;height:13px;background:var(--accent);margin-left:2px;vertical-align:text-bottom;
@@ -101,7 +114,6 @@
   .act-meta{margin-top:5px;font-family:var(--mono);font-size:10.5px;color:var(--faint);display:flex;gap:7px}
   .act-meta .sep{color:var(--faint2)}
   #activity.done .act-bar{display:none}
-  #activity.done .act-dot{background:var(--ok);animation:none}
   #activity.done .caret{display:none}
 
   /* ============ FEED ============ */
@@ -322,7 +334,7 @@
     <div id="activity">
       <div class="act-inner">
         <div class="act-bar"></div>
-        <span class="act-dot"></span>
+        <canvas class="act-orb" id="actOrb"></canvas>
         <div class="act-main">
           <div class="act-text" id="actText">Starting run<span class="caret"></span></div>
           <div class="act-meta"><span id="actStep">step 0</span><span class="sep">·</span><span id="actTimer">0s</span><span class="sep">·</span><span id="actPhase">agent</span></div>
@@ -456,7 +468,25 @@ function setState(s){
 
 /* live activity */
 let runStart=0, runTimer=null;
-function showActivity(on){activity.classList.toggle('on',on); if(!on)activity.classList.remove('done');}
+let _orbRAF=null;
+function startOrb(){
+  const cv=document.getElementById('actOrb'); if(!cv) return;
+  const size=24, dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.width=size*dpr; cv.height=size*dpr; cv.style.width=size+'px'; cv.style.height=size+'px';
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  const cx=size/2, cy=size/2, R=size*0.30, col=[255,106,38], rgb=a=>`rgba(${col[0]},${col[1]},${col[2]},${a})`;
+  const loop=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let t=0; cancelAnimationFrame(_orbRAF);
+  (function frame(){
+    t+=0.016; ctx.clearRect(0,0,size,size);
+    ctx.fillStyle=rgb(.9); ctx.beginPath(); ctx.arc(cx,cy,size*0.045,0,7); ctx.fill();
+    for(let k=0;k<2;k++){const a=t+k*Math.PI,x=cx+Math.cos(a)*R,y=cy+Math.sin(a)*R*0.9;
+      ctx.fillStyle=rgb(.85-k*.35); ctx.beginPath(); ctx.arc(x,y,size*0.05,0,7); ctx.fill();}
+    if(loop) _orbRAF=requestAnimationFrame(frame);
+  })();
+}
+function stopOrb(){if(_orbRAF)cancelAnimationFrame(_orbRAF); _orbRAF=null;}
+function showActivity(on){activity.classList.toggle('on',on); if(on){startOrb();} else {activity.classList.remove('done');stopOrb();}}
 function setActivity(text,{done=false}={}){
   actText.innerHTML=esc(text)+(done?'':'<span class="caret"></span>');
   activity.classList.toggle('done',done);
