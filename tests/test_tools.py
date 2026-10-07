@@ -437,6 +437,63 @@ def test_fuzz_baseline_filters_blanket_responses():
     assert blanket3 is None and fuzz._is_noise(200, 900, sigs3) is False
 
 
+def test_threatintel_pure_parsers():
+    """Summarizers/parsers are the testable core - no network needed."""
+    from c0mr4de.tools import threatintel as ti
+    # classify indicator types
+    assert ti._classify("8.8.8.8") == "ip"
+    assert ti._classify("example.com") == "domain"
+    assert ti._classify("https://x.com/a") == "url"
+    assert ti._classify("d41d8cd98f00b204e9800998ecf8427e") == "hash"   # md5
+    # VirusTotal verdict from last_analysis_stats
+    vt = ti._summarize_vt({"data": {"attributes": {
+        "last_analysis_stats": {"malicious": 3, "suspicious": 1, "harmless": 60, "undetected": 6},
+        "as_owner": "EvilCorp"}}}, "1.2.3.4")
+    assert "MALICIOUS" in vt and "3 malicious" in vt and "EvilCorp" in vt
+    clean = ti._summarize_vt({"data": {"attributes": {"last_analysis_stats":
+             {"malicious": 0, "suspicious": 0, "harmless": 70}}}}, "good.com")
+    assert "clean" in clean
+    # AbuseIPDB high-abuse threshold
+    hi = ti._summarize_abuseipdb({"data": {"abuseConfidenceScore": 88, "totalReports": 42,
+                                           "countryCode": "RU", "isp": "X"}}, "9.9.9.9")
+    assert "HIGH-ABUSE" in hi and "88%" in hi
+    # crt.sh dedupes + strips wildcards + keeps only subdomains of the domain
+    subs = ti._parse_crtsh([{"name_value": "*.a.example.com\na.example.com"},
+                            {"name_value": "b.example.com"},
+                            {"name_value": "evil.com"}], "example.com")
+    assert subs == ["a.example.com", "b.example.com"]
+    # OTX pulse count
+    assert "0 threat pulses" in ti._summarize_otx({"pulse_info": {"count": 0}}, "x.com")
+    assert "2 threat pulse" in ti._summarize_otx(
+        {"pulse_info": {"count": 2, "pulses": [{"name": "APT-X"}]}}, "x.com")
+
+
+def test_threatintel_graceful_without_keys():
+    """Key-gated tools must degrade with a clear message, never crash, when no key."""
+    import os
+    from c0mr4de.tools import threatintel as ti
+    envs = ("VT_API_KEY", "VIRUSTOTAL_API_KEY", "ABUSEIPDB_API_KEY", "OTX_API_KEY")
+    saved = {e: os.environ.pop(e, None) for e in envs}
+    try:
+        assert "VT_API_KEY" in ti.virustotal_lookup("8.8.8.8")
+        assert "ABUSEIPDB_API_KEY" in ti.abuseipdb_check("8.8.8.8")
+        assert "OTX_API_KEY" in ti.otx_indicator("example.com")
+        # non-IP input is rejected before any network/key use
+        assert "IP address" in ti.abuseipdb_check("not-an-ip")
+    finally:
+        for e, v in saved.items():
+            if v is not None:
+                os.environ[e] = v
+
+
+def test_threatintel_tools_registered():
+    from c0mr4de.tools import build_default_registry
+    names = build_default_registry().names()
+    for t in ("virustotal_lookup", "abuseipdb_check", "greynoise_check",
+              "otx_indicator", "crt_sh", "urlscan_search"):
+        assert t in names, f"{t} not registered"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     passed = 0

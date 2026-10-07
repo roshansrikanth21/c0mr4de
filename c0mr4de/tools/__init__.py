@@ -3,8 +3,8 @@ import subprocess
 
 from c0mr4de.tools.base import ToolRegistry
 from c0mr4de.tools import (browser, burp, email_osint, envcheck, files, fuzz, nuclei, oob, ocr, operator, osint,
-                           pd_recon, playbook, poc, recon, recon_stack, report, sourceaudit, surface, web,
-                           webrecon, worklog, writeups)
+                           pd_recon, playbook, poc, recon, recon_stack, report, sourceaudit, surface, threatintel,
+                           web, webrecon, worklog, writeups)
 from c0mr4de.memory import graph as memory_graph
 
 
@@ -25,7 +25,7 @@ def build_default_registry(include_recon: bool | None = None) -> ToolRegistry:
     if include_recon is None:
         include_recon = _docker_available()
     registry = ToolRegistry()
-    for module in (web, webrecon, browser, fuzz, nuclei, pd_recon, oob, burp, osint, email_osint, worklog, files, ocr, operator, recon_stack, playbook, memory_graph, report, surface, sourceaudit, poc, envcheck, writeups):
+    for module in (web, webrecon, browser, fuzz, nuclei, pd_recon, oob, burp, osint, email_osint, worklog, files, ocr, operator, recon_stack, playbook, memory_graph, report, surface, sourceaudit, poc, envcheck, writeups, threatintel):
         for tool in module.TOOLS:
             registry.register(tool)
     if include_recon:

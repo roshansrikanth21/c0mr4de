@@ -3,6 +3,7 @@ available, so c0mr4de knows what runs natively, what falls back to Docker, and
 what to install for a self-sufficient setup. Read-only."""
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 
@@ -12,6 +13,16 @@ _GROUPS = {
     "recon": ["nmap", "subfinder", "amass", "naabu", "httpx", "dnsx", "tlsx", "katana", "gau"],
     "vuln": ["nuclei", "sqlmap", "ffuf", "dalfox", "semgrep"],
     "runtime": ["docker", "git", "go"],
+}
+
+# Passive-intel API keys and what unlocks them. crt.sh + urlscan.io need no key,
+# so they are intentionally absent here - they always work.
+_API_KEYS = {
+    "SHODAN_API_KEY": "shodan_host",
+    "VT_API_KEY": "virustotal_lookup",
+    "ABUSEIPDB_API_KEY": "abuseipdb_check",
+    "OTX_API_KEY": "otx_indicator",
+    "GREYNOISE_API_KEY": "greynoise_check (optional - raises community rate limit)",
 }
 
 
@@ -49,6 +60,12 @@ def env_report() -> str:
                 missing += 1
                 miss_names.append(b)
         lines.append(f"  {group:8}: " + ", ".join(row))
+    key_row = []
+    for env, tool in _API_KEYS.items():
+        key_row.append(f"{env.split('_')[0].lower()}" if os.environ.get(env)
+                       else f"{env.split('_')[0].lower()} (no key -> {tool} limited)")
+    lines.append("  intel keys: " + ", ".join(key_row))
+    lines.append("  keyless intel: crt_sh, urlscan_search (always available)")
     dk, ol = _docker_up(), _ollama_up()
     lines.append(f"  docker daemon: {'up' if dk else 'down'}  (runs missing ProjectDiscovery tools if the image is pulled)")
     lines.append(f"  ollama       : {'up' if ol else 'down'}  (local model fallback + knowledge-store embeddings)")
