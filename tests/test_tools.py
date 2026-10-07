@@ -369,7 +369,8 @@ def test_make_poc_builds_reproducible_curl():
 def test_build_registry_includes_new_tools():
     from c0mr4de.tools import build_default_registry
     names = build_default_registry().names()
-    for t in ("make_poc", "katana_crawl", "gau_urls", "tlsx_sans", "dnsx_resolve", "audit_source"):
+    for t in ("make_poc", "katana_crawl", "gau_urls", "tlsx_sans", "dnsx_resolve", "audit_source",
+              "semgrep_scan", "env_report"):
         assert t in names, f"{t} not registered"
 
 

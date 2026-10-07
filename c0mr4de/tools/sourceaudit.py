@@ -11,7 +11,10 @@ the runtime injection tests). Detection-only, read-only.
 """
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from c0mr4de.tools.base import Tool
@@ -124,6 +127,51 @@ def audit_source(path: str = ".", only: str = "", max_files: int = 500) -> str:
     return "\n".join(out)
 
 
+def semgrep_scan(path: str, config: str = "auto", max_findings: int = 40) -> str:
+    """Run Semgrep (real SAST rules) over a repo and return findings ranked by severity.
+    Deeper than audit_source's regex pass - actual dataflow/semantic rules. Still SAST,
+    so each hit is a CANDIDATE: triage it with the surrounding code before reporting
+    (the research consensus is an LLM-with-code-context triage cuts SAST false positives
+    88-99%). config 'auto' pulls the rule registry (needs network); use 'p/default' or a
+    local ruleset offline."""
+    if shutil.which("semgrep") is None:
+        return "semgrep not installed. Install with: pip install semgrep (or pipx install semgrep)."
+    root = Path(path).expanduser()
+    if not root.exists():
+        return f"ERROR: {path} does not exist."
+    try:
+        r = subprocess.run(["semgrep", "scan", "--config", config, "--json", "--quiet",
+                            "--timeout", "30", str(root)], capture_output=True, text=True, timeout=420)
+    except subprocess.TimeoutExpired:
+        return "semgrep timed out - narrow the path or use a lighter --config."
+    except FileNotFoundError:
+        return "ERROR: could not launch semgrep."
+    try:
+        data = json.loads(r.stdout or "{}")
+    except json.JSONDecodeError:
+        return f"semgrep produced no parseable JSON. stderr: {(r.stderr or '')[:300]}"
+    results = data.get("results", [])
+    if not results:
+        return (f"semgrep: no findings under {path} (config={config}). Does not rule out "
+                "logic/auth bugs - semgrep only catches what its rules cover.")
+    rank = {"ERROR": 0, "WARNING": 1, "INFO": 2}
+    results.sort(key=lambda x: rank.get(x.get("extra", {}).get("severity", "INFO"), 3))
+    out = [f"semgrep: {len(results)} finding(s) under {path} (config={config}), most-severe first.",
+           "SAST CANDIDATES - triage each with the surrounding code and confirm exploitability "
+           "before reporting; SAST has false positives.", ""]
+    for res in results[:max_findings]:
+        sev = res.get("extra", {}).get("severity", "INFO")
+        rel = res.get("path", "?")
+        line = res.get("start", {}).get("line", "?")
+        rule = str(res.get("check_id", "?")).split(".")[-1]
+        msg = (res.get("extra", {}).get("message", "") or "").strip().replace("\n", " ")[:170]
+        out.append(f"[{sev}] {rel}:{line}  {rule}")
+        out.append(f"    {msg}")
+    if len(results) > max_findings:
+        out.append(f"... +{len(results) - max_findings} more (raise max_findings or narrow config).")
+    return "\n".join(out)
+
+
 TOOLS = [
     Tool(
         name="audit_source",
@@ -147,5 +195,24 @@ TOOLS = [
             "required": ["path"],
         },
         fn=audit_source,
+    ),
+    Tool(
+        name="semgrep_scan",
+        description=(
+            "Run Semgrep (real SAST rules, deeper than audit_source's regex pass) over a repo; "
+            "returns findings ranked by severity. Each is a SAST CANDIDATE - triage with the "
+            "surrounding code and confirm exploitability before reporting (SAST has false "
+            "positives). config 'auto' pulls the rule registry (needs network); use a local "
+            "ruleset offline. Pair with audit_source for coverage."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "repo directory to scan"},
+                "config": {"type": "string", "description": "semgrep ruleset, default 'auto'"},
+            },
+            "required": ["path"],
+        },
+        fn=semgrep_scan,
     ),
 ]
