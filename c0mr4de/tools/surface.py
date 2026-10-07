@@ -32,6 +32,10 @@ _SURFACE = AttackSurface()
 _AMASS_IMG = "caffix/amass:latest"
 _NAABU_IMG = "projectdiscovery/naabu:latest"
 _HTTPX_IMG = "projectdiscovery/httpx:latest"
+_KATANA_IMG = "projectdiscovery/katana:latest"
+_DNSX_IMG = "projectdiscovery/dnsx:latest"
+_TLSX_IMG = "projectdiscovery/tlsx:latest"
+_GAU_IMG = "sxcurity/gau:latest"
 
 
 def _have(cmd: str) -> bool:
@@ -95,6 +99,74 @@ def shodan_host(ip: str) -> str:
         return f"Shodan error: {exc}"
     n = _SURFACE.ingest_shodan(r.text)
     return f"shodan: merged {n} service records for {ip}. " + _stat_tail()
+
+
+def _ingest_urls(lines, source: str) -> tuple[int, list[str]]:
+    """Add discovered URLs as endpoints; return (added, param-bearing URLs)."""
+    added, params = 0, []
+    for u in lines:
+        u = u.strip()
+        if not u.startswith(("http://", "https://")):
+            continue
+        _SURFACE.add_endpoint(u, source=source)
+        added += 1
+        q = u.split("?", 1)[1] if "?" in u else ""
+        if "=" in q:
+            params.append(u)
+    return added, sorted(set(params))
+
+
+def _param_tail(params: list[str]) -> str:
+    if not params:
+        return ""
+    return ("\nparam-bearing URLs (feed to test_all_params / test_injection):\n  "
+            + "\n  ".join(params[:25]) + (f"\n  ... +{len(params) - 25} more" if len(params) > 25 else ""))
+
+
+def katana_crawl(url: str, depth: int = 2) -> str:
+    """JS-aware crawl (katana) of a URL - finds far more endpoints/params than a plain
+    crawl. Adds them to the surface and surfaces the param-bearing ones to test."""
+    out = _run("katana", _KATANA_IMG, ["-u", url, "-d", str(depth), "-jc", "-silent", "-nc"], 240)
+    if isinstance(out, str):
+        return out
+    added, params = _ingest_urls(out[0].splitlines(), "katana")
+    return f"katana: crawled {url}, +{added} endpoints ({len(params)} with params). {_stat_tail()}{_param_tail(params)}"
+
+
+def gau_urls(domain: str) -> str:
+    """Historical URLs for a domain from web archives (gau) - forgotten endpoints and
+    params for free, the biggest cheap bug-bounty win. Merges them into the surface."""
+    out = _run("gau", _GAU_IMG, ["--threads", "5", domain], 240)
+    if isinstance(out, str):
+        return out
+    added, params = _ingest_urls(out[0].splitlines(), "gau")
+    return f"gau: +{added} historical URLs for {domain} ({len(params)} with params). {_stat_tail()}{_param_tail(params)}"
+
+
+def tlsx_sans(host: str) -> str:
+    """Pull subject-alt-names from a host's TLS certificate (tlsx) - a cheap extra
+    subdomain source. Merges SANs into the surface."""
+    out = _run("tlsx", _TLSX_IMG, ["-u", host, "-san", "-silent", "-resp-only"], 60)
+    if isinstance(out, str):
+        return out
+    n = _SURFACE.ingest_subfinder(out[0], source="tlsx")
+    return f"tlsx: +{n} subdomains from {host} cert SANs (merged). {_stat_tail()}"
+
+
+def dnsx_resolve(domains: str) -> str:
+    """Resolve a list of hostnames (comma or newline separated) with dnsx, keep the live
+    ones, and merge them into the surface. Run after subfinder/amass/tlsx to prune dead hosts."""
+    items = [d.strip() for d in domains.replace(",", "\n").splitlines() if d.strip()]
+    if not items:
+        return "give a comma or newline separated list of hostnames to resolve."
+    tmp = Path(tempfile.gettempdir()) / "c0mr4de_dnsx.txt"
+    tmp.write_text("\n".join(items), encoding="utf-8")
+    out = _run("dnsx", _DNSX_IMG, ["-l", str(tmp), "-silent"], 150)
+    if isinstance(out, str):
+        return out
+    live = [l.strip() for l in out[0].splitlines() if l.strip()]
+    n = _SURFACE.ingest_subfinder("\n".join(live), source="dnsx")
+    return f"dnsx: {len(live)}/{len(items)} hostnames resolve (live); +{n} merged. {_stat_tail()}"
 
 
 def _batch_httpx(hosts: list[str]) -> int:
@@ -241,4 +313,26 @@ TOOLS = [
          description="Passive Shodan host lookup for an IP (open ports, products, known CVEs). Needs SHODAN_API_KEY.",
          parameters={"type": "object", "properties": {"ip": {"type": "string"}}, "required": ["ip"]},
          fn=shodan_host),
+    Tool(name="katana_crawl",
+         description=("JS-aware crawl (katana) of a URL - discovers far more endpoints and param-bearing URLs "
+                      "than a plain crawl. Adds them to the attack surface and lists the param URLs ready for "
+                      "test_all_params. depth default 2."),
+         parameters={"type": "object", "properties": {"url": {"type": "string"}, "depth": {"type": "integer"}},
+                     "required": ["url"]},
+         fn=katana_crawl),
+    Tool(name="gau_urls",
+         description=("Fetch historical URLs for a DOMAIN from web archives (gau) - forgotten endpoints and "
+                      "params for free, a top bug-bounty recon win. Merges them into the surface and lists the "
+                      "param-bearing ones to test."),
+         parameters={"type": "object", "properties": {"domain": {"type": "string"}}, "required": ["domain"]},
+         fn=gau_urls),
+    Tool(name="tlsx_sans",
+         description="Extract subject-alt-name subdomains from a host's TLS certificate (tlsx); merges into the surface.",
+         parameters={"type": "object", "properties": {"host": {"type": "string"}}, "required": ["host"]},
+         fn=tlsx_sans),
+    Tool(name="dnsx_resolve",
+         description=("Resolve a comma/newline-separated list of hostnames with dnsx, keep the live ones, and "
+                      "merge them into the surface. Run after subfinder/amass/tlsx to prune dead hosts."),
+         parameters={"type": "object", "properties": {"domains": {"type": "string"}}, "required": ["domains"]},
+         fn=dnsx_resolve),
 ]
