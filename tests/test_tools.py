@@ -352,6 +352,27 @@ def test_audit_source_flags_vuln_not_clean(tmp_path=None):
     assert out.index("Command injection") < out.index("SQL injection")
 
 
+def test_make_poc_builds_reproducible_curl():
+    from c0mr4de.tools.poc import make_poc
+    # GET: payload injected (url-encoded) into the query param
+    g = make_poc("https://t.com/item?id=1", param="id", payload="1' OR SLEEP(5)-- -",
+                 observe="~5s delay vs baseline")
+    assert g.startswith("PoC")
+    assert "curl -i -s" in g and "t.com/item?id=1" in g
+    assert "SLEEP" in g.upper()                                  # payload present (encoded and/or raw)
+    assert "~5s delay vs baseline" in g                          # observe note carried through
+    # POST with explicit body + auth header
+    p = make_poc("https://t.com/login", method="POST", body="u=admin'--", headers='{"Cookie":"s=abc"}')
+    assert "-X POST" in p and "--data" in p and "Cookie: s=abc" in p
+
+
+def test_build_registry_includes_new_tools():
+    from c0mr4de.tools import build_default_registry
+    names = build_default_registry().names()
+    for t in ("make_poc", "katana_crawl", "gau_urls", "tlsx_sans", "dnsx_resolve", "audit_source"):
+        assert t in names, f"{t} not registered"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     passed = 0
