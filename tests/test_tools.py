@@ -291,11 +291,14 @@ def test_report_findings_default_to_unverified():
     assert "UNVERIFIED - based on static or manual analysis" in report
     assert "VERIFIED - confirmed by a deterministic tool" in report
     # the unverified finding's own detail section must carry the warning (not just
-    # exist somewhere else in the doc) - locate it via the "Finding N:" header, not
-    # the summary table, since both titles also appear there
-    unverified_section = report[report.index("### Finding 1: Claimed cleartext password"):
-                                 report.index("### Finding 2: Execution-confirmed XSS")]
-    assert "UNVERIFIED" in unverified_section
+    # exist somewhere else in the doc). Locate sections by their "Finding N:" headers
+    # without assuming order - the verified HIGH now sorts above the unverified
+    # "critical" (which caps to the unverified tier), which is the intended ranking.
+    unv_start = report.index("Claimed cleartext password", report.index("## Detailed Findings"))
+    sec_from = report.rindex("### Finding", 0, unv_start)
+    nxt = report.find("### Finding", unv_start)
+    unv_section = report[sec_from:nxt] if nxt != -1 else report[sec_from:]
+    assert "UNVERIFIED" in unv_section
     assert "No - unconfirmed" in report  # summary table column
 
 
@@ -372,6 +375,66 @@ def test_build_registry_includes_new_tools():
     for t in ("make_poc", "katana_crawl", "gau_urls", "tlsx_sans", "dnsx_resolve", "audit_source",
               "semgrep_scan", "env_report"):
         assert t in names, f"{t} not registered"
+
+
+def test_unverified_severity_is_capped():
+    """An unverified finding must not keep an urgent (critical/high) rating - that
+    inflation is what a blanket-403 WAF produced. It caps to the policy tier and
+    the detail section explains the downgrade. A verified finding is never capped,
+    and a low finding is left alone (the cap only lowers, never raises)."""
+    from c0mr4de.reportgen import _UNVERIFIED_SEVERITY_CAP
+    findings = [
+        {"title": "Blanket 403 paths", "severity": "high", "category": "x",
+         "description": "403 on /flag.txt - unconfirmed."},                      # unverified -> capped
+        {"title": "Confirmed SQLi", "severity": "critical", "category": "x",
+         "description": "timing-confirmed.", "verified": True},                   # verified -> kept
+        {"title": "Weak header", "severity": "low", "category": "x",
+         "description": "missing HSTS."},                                         # below cap -> kept
+    ]
+    report = generate_report(target="t.com", findings=findings)
+    capped = report[report.index("### Finding"):]
+    # the once-HIGH unverified finding now shows the cap tier, not HIGH, in its header row
+    blanket = report[report.index("Blanket 403 paths"):]
+    assert f"| **Severity** | {_UNVERIFIED_SEVERITY_CAP.upper()} |" in capped
+    assert "claimed severity was HIGH" in blanket
+    assert "capped" in blanket.lower()
+    # verified critical keeps CRITICAL and gets no cap note
+    crit = report[report.index("### Finding"):]
+    assert "| **Severity** | CRITICAL |" in crit
+    # low stays low (cap only lowers critical/high, never raises low/info)
+    assert "| **Severity** | LOW |" in report
+
+
+def test_fuzz_baseline_filters_blanket_responses():
+    """fuzz_paths/_param must treat a response that matches a known-nonexistent
+    baseline as noise, not a discovery - the blanket-403 false positive fix."""
+    from c0mr4de.tools import fuzz
+
+    class _Resp:
+        def __init__(self, status, body):
+            self.status_code, self.content = status, body
+
+    # server that 403s EVERYTHING with a fixed 24-byte body (the WAF case)
+    blanket_body = b"x" * 24
+    sigs = {(403, 24)}
+    assert fuzz._is_noise(403, 24, sigs) is True            # matches baseline -> noise
+    assert fuzz._is_noise(404, 0, sigs) is True             # 404 is always noise
+    assert fuzz._is_noise(200, 5000, sigs) is False         # a real, differing hit survives
+
+    class _BlanketClient:
+        def get(self, url):
+            return _Resp(403, blanket_body)
+
+    sigs2, blanket = fuzz._calibrate(_BlanketClient(), lambda tok: f"http://t/{tok}")
+    assert blanket == 403 and sigs2 == {(403, 24)}
+
+    class _RealClient:
+        def get(self, url):
+            # random calibration tokens 404; a genuine path returns a 200 w/ real body
+            return _Resp(404, b"") if "c0mr4de-" in url else _Resp(200, b"y" * 900)
+
+    sigs3, blanket3 = fuzz._calibrate(_RealClient(), lambda tok: f"http://t/{tok}")
+    assert blanket3 is None and fuzz._is_noise(200, 900, sigs3) is False
 
 
 if __name__ == "__main__":

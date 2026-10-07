@@ -47,6 +47,43 @@ _SEVERITY_DEF = {
             "supporting context for other findings."),
 }
 
+# The most urgent severity an UNVERIFIED finding may carry. An unverified finding
+# has no deterministic confirmation, so it must not claim an urgent (critical/high)
+# rating - that is severity inflation, and it is exactly what produced a real
+# false "HIGH" from a blanket-403 WAF response the engine never confirmed. Capped
+# to this tier instead. Set to "info" for the harshest policy (treat every
+# unverified lead as informational); "medium" keeps a genuine-but-unconfirmed lead
+# (e.g. un-encoded reflected XSS the browser-exec check could not reach) visible as
+# something to look at without overstating it. Verified findings are never capped.
+_UNVERIFIED_SEVERITY_CAP = "medium"
+
+
+def _effective_severity(finding: dict) -> str:
+    """The severity a finding is actually rendered with. Verified findings keep
+    their claimed severity; unverified ones cannot exceed _UNVERIFIED_SEVERITY_CAP."""
+    claimed = str(finding.get("severity", "info")).lower()
+    if claimed not in _SEVERITY_ORDER:
+        claimed = "info"
+    if finding.get("verified") is True:
+        return claimed
+    if _SEVERITY_ORDER[claimed] < _SEVERITY_ORDER[_UNVERIFIED_SEVERITY_CAP]:
+        return _UNVERIFIED_SEVERITY_CAP
+    return claimed
+
+
+def _apply_severity_cap(finding: dict) -> None:
+    """Record the claimed severity, then overwrite `severity` with the effective
+    (verification-capped) value in place, so every downstream use - sort order,
+    risk-table counts, summary table, detailed section - stays consistent. Sets
+    `_severity_capped` when the cap actually lowered the rating."""
+    claimed = str(finding.get("severity", "info")).lower()
+    if claimed not in _SEVERITY_ORDER:
+        claimed = "info"
+    effective = _effective_severity(finding)
+    finding["_claimed_severity"] = claimed
+    finding["severity"] = effective
+    finding["_severity_capped"] = effective != claimed
+
 
 def sanitize_text(text) -> str:
     """Strip typographic punctuation that does not belong in a formal deliverable -
@@ -124,6 +161,8 @@ def generate_report(
     doc_title = "Vulnerability Assessment Report" if is_va else "Penetration Test Report"
 
     findings = _san_all(findings or [])
+    for f in findings:
+        _apply_severity_cap(f)
     summary = sanitize_text(summary)
     positives = sanitize_text(positives)
     attack_narrative = sanitize_text(attack_narrative)
@@ -258,6 +297,12 @@ def generate_report(
             out.append("**Verification status:** UNVERIFIED - based on static or manual analysis; "
                        "not independently confirmed by a deterministic tool. Treat as a lead requiring "
                        "manual confirmation, not a confirmed finding.")
+        if f.get("_severity_capped"):
+            out.append("")
+            out.append(f"**Severity note:** claimed severity was {f['_claimed_severity'].upper()}, "
+                       f"automatically capped to {sev.upper()} because this finding is UNVERIFIED. An "
+                       "unverified finding carries no deterministic confirmation and cannot hold an urgent "
+                       "rating - re-rate it only after a tool or manual test actually confirms it.")
         out.append("")
         for label, key, code in (
             ("Description", "description", False), ("Technical Details", "technical_details", False),

@@ -4,6 +4,8 @@ what blocked the path-traversal run: right technique, couldn't find the
 `secret_flag.txt` filename because ffuf needed Docker)."""
 from __future__ import annotations
 
+import secrets
+
 import httpx
 
 from c0mr4de.tools.base import Tool
@@ -25,6 +27,10 @@ _FILES = [
 
 _WORDLISTS = {"paths": _PATHS, "files": _FILES}
 
+# A result whose body length is within this many bytes of a baseline (known-
+# nonexistent) response is treated as the same canned answer, not a real hit.
+_LEN_TOLERANCE = 32
+
 
 def _hits(pairs):
     lines = []
@@ -34,19 +40,51 @@ def _hits(pairs):
     return "\n".join(lines)
 
 
+def _probe(c, url):
+    try:
+        r = c.get(url)
+        return r.status_code, len(r.content)
+    except httpx.HTTPError:
+        return 0, 0
+
+
+def _calibrate(c, make_url):
+    """Learn how the target answers a resource that CANNOT exist, by probing two
+    random tokens. Returns (signatures, blanket_status): `signatures` is the set of
+    (status, length) the server returns for nothing-here, and `blanket_status` is a
+    non-404 status it returns uniformly for random paths (e.g. a WAF that 403s
+    everything, or a soft-404 that 200s an error page) - the signal that any probe
+    sharing it is noise, not a discovery. Without this, a blanket-403 WAF makes
+    EVERY path look 'interesting' (the real false positive this fixes)."""
+    sigs = set()
+    for _ in range(2):
+        sigs.add(_probe(c, make_url(f"c0mr4de-{secrets.token_hex(12)}")))
+    statuses = {s for s, _ in sigs}
+    only = next(iter(statuses)) if len(statuses) == 1 else None
+    blanket = only if only not in (None, 0, 404) else None
+    return sigs, blanket
+
+
+def _is_noise(status, length, sigs) -> bool:
+    """True if this (status, length) matches a baseline nothing-here response."""
+    if status in (0, 404):
+        return True
+    return any(status == bs and abs(length - bl) <= _LEN_TOLERANCE for bs, bl in sigs)
+
+
 def fuzz_paths(base_url: str, wordlist: str = "paths") -> str:
     words = _WORDLISTS.get(wordlist, _PATHS)
     base = base_url.rstrip("/")
-    pairs = []
     with httpx.Client(timeout=8, follow_redirects=False) as c:
-        for w in words:
-            try:
-                r = c.get(f"{base}/{w}")
-                pairs.append((f"/{w}", r.status_code, len(r.content)))
-            except httpx.HTTPError:
-                pairs.append((f"/{w}", 0, 0))
-    interesting = [p for p in pairs if p[1] not in (0, 404)]
-    return f"fuzzed {len(words)} paths on {base}. Interesting (non-404):\n{_hits(interesting) or '  (none)'}"
+        sigs, blanket = _calibrate(c, lambda tok: f"{base}/{tok}")
+        pairs = [(f"/{w}", *_probe(c, f"{base}/{w}")) for w in words]
+    interesting = [p for p in pairs if not _is_noise(p[1], p[2], sigs)]
+    header = f"fuzzed {len(words)} paths on {base}."
+    if blanket is not None:
+        header += (f"\nWARNING: this server returns a blanket {blanket} for random nonexistent paths "
+                   f"(baseline={sorted(sigs)}) - likely a WAF/catch-all. A {blanket} here does NOT confirm "
+                   f"a path exists; such responses are filtered out below, not reported as discoveries.")
+    return f"{header}\nInteresting (differs from the nothing-here baseline):\n{_hits(interesting) or '  (none)'}"
 
 
 def fuzz_param(url_with_fuzz: str, wordlist: str = "files") -> str:
@@ -55,18 +93,17 @@ def fuzz_param(url_with_fuzz: str, wordlist: str = "files") -> str:
     if "FUZZ" not in url_with_fuzz:
         return "ERROR: put the literal token FUZZ in the URL where the wordlist should go."
     words = _WORDLISTS.get(wordlist, _FILES)
-    pairs = []
     with httpx.Client(timeout=8, follow_redirects=False) as c:
-        for w in words:
-            url = url_with_fuzz.replace("FUZZ", w)
-            try:
-                r = c.get(url)
-                pairs.append((w, r.status_code, len(r.content)))
-            except httpx.HTTPError:
-                pairs.append((w, 0, 0))
-    interesting = [p for p in pairs if p[1] not in (0, 404)]
+        sigs, blanket = _calibrate(c, lambda tok: url_with_fuzz.replace("FUZZ", tok))
+        pairs = [(w, *_probe(c, url_with_fuzz.replace("FUZZ", w))) for w in words]
+    interesting = [p for p in pairs if not _is_noise(p[1], p[2], sigs)]
+    header = f"fuzzed {len(words)} values into FUZZ."
+    if blanket is not None:
+        header += (f"\nWARNING: a random nonexistent value also returns {blanket} (baseline={sorted(sigs)}) "
+                   f"- the endpoint answers everything the same way, so a {blanket} does NOT confirm a hit. "
+                   f"Such responses are filtered out below.")
     return (
-        f"fuzzed {len(words)} values into FUZZ. Non-404 responses (check the biggest/oddest for a hit):\n"
+        f"{header}\nResponses that differ from the nothing-here baseline (check the biggest/oddest for a hit):\n"
         f"{_hits(interesting) or '  (none)'}\n"
         f"TIP: fetch the interesting one with http_request to read its full body."
     )
