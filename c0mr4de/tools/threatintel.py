@@ -223,6 +223,61 @@ def crt_sh(domain: str) -> str:
     return f"crt.sh: {len(subs)} unique sub-domains for {domain}:\n  " + "\n  ".join(shown) + tail
 
 
+# ── WHOIS via RDAP (free, no key - modern structured WHOIS) ───────────────────
+def _summarize_rdap(data: dict, query: str) -> str:
+    """Pull the fields an analyst actually wants out of an RDAP record: registrar,
+    key dates, status, nameservers. RDAP is the structured JSON successor to WHOIS -
+    no scraping, no per-registrar format quirks."""
+    events = {e.get("eventAction"): e.get("eventDate") for e in (data.get("events") or [])}
+    registrar = ""
+    for ent in data.get("entities") or []:
+        roles = ent.get("roles") or []
+        if "registrar" in roles:
+            # registrar name lives in the jCard vcardArray
+            vcard = (ent.get("vcardArray") or [None, []])[1]
+            for item in vcard:
+                if item and item[0] == "fn":
+                    registrar = item[3]
+                    break
+            if not registrar:
+                registrar = ent.get("handle", "")
+    ns = [n.get("ldhName", "") for n in (data.get("nameservers") or [])]
+    status = ", ".join(data.get("status") or [])
+    bits = [f"WHOIS/RDAP {query}:"]
+    if registrar:
+        bits.append(f"registrar={registrar}")
+    if events.get("registration"):
+        bits.append(f"created={events['registration'][:10]}")
+    if events.get("expiration"):
+        bits.append(f"expires={events['expiration'][:10]}")
+    if events.get("last changed"):
+        bits.append(f"updated={events['last changed'][:10]}")
+    if status:
+        bits.append(f"status=[{status}]")
+    line = " ".join(bits)
+    if ns:
+        line += "\n  nameservers: " + ", ".join(n for n in ns if n)
+    return line
+
+
+def whois_lookup(query: str) -> str:
+    """WHOIS/registration data for a domain or IP via RDAP (registrar, creation/
+    expiry dates, status, nameservers). Free, no key, passive. A freshly registered
+    domain is a classic phishing/C2 tell, so the creation date matters."""
+    kind = "ip" if _is_ip(query) else "domain"
+    path = "ip" if kind == "ip" else "domain"
+    try:
+        r = _get_json(f"https://rdap.org/{path}/{query}")
+        if r.status_code == 404:
+            return f"RDAP has no record for {query} (unregistered, or an unsupported TLD)."
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        return f"WHOIS/RDAP error: {exc}"
+    except ValueError:
+        return "RDAP returned no parseable JSON."
+    return _summarize_rdap(r.json(), query)
+
+
 # ── urlscan.io (search - free, no key) ────────────────────────────────────────
 def _summarize_urlscan(data: dict, query: str) -> str:
     results = data.get("results") or []
@@ -279,6 +334,14 @@ TOOLS = [
                      "ties an indicator to known campaigns. Needs OTX_API_KEY. Passive."),
         parameters={"type": "object", "properties": {"indicator": {"type": "string"}}, "required": ["indicator"]},
         fn=otx_indicator,
+    ),
+    Tool(
+        name="whois_lookup",
+        description=("WHOIS/registration data for a domain or IP via RDAP (registrar, creation/expiry "
+                     "dates, status, nameservers). Free, no key, passive. A freshly registered domain is "
+                     "a classic phishing/C2 tell - check the creation date."),
+        parameters={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        fn=whois_lookup,
     ),
     Tool(
         name="crt_sh",

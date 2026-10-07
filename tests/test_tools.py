@@ -490,8 +490,46 @@ def test_threatintel_tools_registered():
     from c0mr4de.tools import build_default_registry
     names = build_default_registry().names()
     for t in ("virustotal_lookup", "abuseipdb_check", "greynoise_check",
-              "otx_indicator", "crt_sh", "urlscan_search"):
+              "otx_indicator", "crt_sh", "urlscan_search", "whois_lookup"):
         assert t in names, f"{t} not registered"
+
+
+def test_whois_rdap_summary():
+    from c0mr4de.tools.threatintel import _summarize_rdap
+    out = _summarize_rdap({
+        "events": [{"eventAction": "registration", "eventDate": "2001-08-13T04:00:00Z"},
+                   {"eventAction": "expiration", "eventDate": "2030-08-13T04:00:00Z"}],
+        "entities": [{"roles": ["registrar"],
+                      "vcardArray": [None, [["fn", {}, "text", "MarkMonitor"]]]}],
+        "status": ["client transfer prohibited"],
+        "nameservers": [{"ldhName": "ns1.example.com"}],
+    }, "example.com")
+    assert "registrar=MarkMonitor" in out
+    assert "created=2001-08-13" in out and "expires=2030-08-13" in out
+    assert "ns1.example.com" in out
+
+
+def test_exif_gps_decode_and_extract():
+    """Pure GPS decode, plus a real round-trip: write a JPEG with Pillow, then
+    extract it back through the Pillow fallback (no exiftool, no network)."""
+    import tempfile
+    from pathlib import Path
+    from c0mr4de.tools import exif as ex
+    # pure DMS -> decimal (London, with W/S refs applied)
+    g = {"GPSLatitude": ((51, 1), (30, 1), (0, 1)), "GPSLatitudeRef": "N",
+         "GPSLongitude": ((0, 1), (7, 1), (0, 1)), "GPSLongitudeRef": "W"}
+    lat, lon = ex._gps_to_decimal(g)
+    assert lat == 51.5 and round(lon, 4) == -0.1167
+    assert "maps.google.com" in ex._format_meta({"GPS": g, "Software": "c0mr4de-cam"})
+    assert "(no metadata found)" == ex._format_meta({})
+
+    # round-trip through a real JPEG + the real extractor (no network, no exiftool)
+    from PIL import Image
+    img_path = Path(tempfile.mkdtemp()) / "shot.jpg"
+    Image.new("RGB", (8, 8), (120, 20, 20)).save(img_path, "JPEG")
+    out = ex.exif_metadata(str(img_path))
+    assert "metadata for shot.jpg" in out          # extractor ran, found the file
+    assert ex.exif_metadata("/no/such/file.jpg").startswith("ERROR: file not found")
 
 
 if __name__ == "__main__":
