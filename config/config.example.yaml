@@ -1,12 +1,23 @@
 # Copy this to config.yaml and fill in your choice. config.yaml is
 # gitignored so your API keys never get committed.
 
-# --- Optional: multiple models you can switch between live from the UI ---
-# Define named presets under `models:` and point `active_model:` at one. The
-# web UI's model dropdown switches between them; the choice is remembered in
-# config/runtime.json and takes effect on the next run (no restart). Each
-# preset takes the same shape as the `backend:` block below. If `active_model`
-# is unset or missing, c0mr4de falls back to the single `backend:` block.
+# --- Switching models from the UI ---
+# The web UI's model dropdown AUTO-DISCOVERS the models actually installed on
+# the machine it runs on - every Ollama model you've pulled, plus any local
+# OpenAI-compatible server it finds (LM Studio, llama.cpp, vLLM, Jan, Colibri).
+# You do not need to list anything here for discovery to work. Hit the rescan
+# button after pulling a new model. The choice is remembered in
+# config/runtime.json and applies on the next run (no restart).
+#
+# `models:` below is OPTIONAL - use it only to pin a named preset (e.g. a remote
+# endpoint, or one carrying an api_key) so it always shows alongside discovered
+# ones. `active_model:` picks the default preset when nothing else is selected;
+# if unset, c0mr4de falls back to the single `backend:` block.
+#
+# `local_endpoints:` adds extra OpenAI-compatible URLs to the discovery scan,
+# e.g. a local server on a non-standard port:
+# local_endpoints:
+#   - http://localhost:9000/v1
 #
 # active_model: local-120b
 # models:

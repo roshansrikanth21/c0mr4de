@@ -353,6 +353,7 @@
         <span class="modes"><button class="mode on" data-mode="agent">agent</button><button class="mode" data-mode="swarm">swarm</button></span>
         <select class="selctrl" id="rolePick" title="Role - scopes which tools and methodology this session uses"></select>
         <select class="selctrl" id="modelPick" title="Model - active backend; applies to the next run"></select>
+        <button class="ghost" id="rescanBtn" title="Rescan this device for installed models"><svg class="ic" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         <button class="ghost" id="osintBtn"><svg class="ic" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg> osint graph</button>
         <div id="drop"><svg class="ic" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> attach a file or screenshot <span class="files"></span></div>
       </div>
@@ -635,25 +636,45 @@ rolePick.onchange=async()=>{
   toast({title:'Role · '+(d.label||selectedRole),body:esc(d.desc||'')+(d.tool_count!=null?` (${d.tool_count} tools)`:'')});
 };
 async function loadModels(){
+  modelPick.innerHTML='<option disabled selected>scanning device…</option>';
   try{
     const j=await fetch('/models').then(r=>r.json());
-    modelPick.innerHTML='';
-    if(!j.models.length){const o=document.createElement('option');o.textContent='config backend';o.disabled=true;modelPick.appendChild(o);modelPick.disabled=true;return;}
-    modelPick.disabled=false;
-    for(const m of j.models){
-      const o=document.createElement('option'); o.value=m.name;
-      o.textContent=m.name; o.title=`${m.type} · ${m.model} · ${m.endpoint}`;
+    modelPick.innerHTML=''; modelPick.disabled=false;
+    if(!j.models.length){
+      const o=document.createElement('option');o.textContent='no models found';o.disabled=true;
       modelPick.appendChild(o);
+      modelPick.title='No local models found on this device. Start Ollama (ollama serve) or a local server, then rescan.';
+      return;
+    }
+    modelPick.title='Model - active backend; applies to the next run';
+    const labels={ollama:'Ollama',openai:'Local server',preset:'Presets'}, bySrc={};
+    for(const m of j.models){(bySrc[m.source]=bySrc[m.source]||[]).push(m);}
+    for(const src of ['ollama','openai','preset']){
+      if(!bySrc[src])continue;
+      const g=document.createElement('optgroup'); g.label=labels[src]||src;
+      for(const m of bySrc[src]){
+        const o=document.createElement('option'); o.value=m.name;
+        o.textContent=m.label+(m.detail?` · ${m.detail}`:'');
+        o.title=`${m.source} · ${m.type} · ${m.model} · ${m.endpoint}`;
+        g.appendChild(o);
+      }
+      modelPick.appendChild(g);
     }
     if(j.active)modelPick.value=j.active;
-  }catch(e){}
+  }catch(e){modelPick.innerHTML='<option disabled selected>scan failed - retry</option>';}
 }
 modelPick.onchange=async()=>{
   const name=modelPick.value;
   const r=await fetch('/models/active',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({name})}).then(r=>r.json());
   if(r.error){toast({level:'err',title:'Switch failed',body:esc(r.error)});return;}
-  toast({title:'Model · '+name,body:'Active on the next run.'});
+  const opt=modelPick.options[modelPick.selectedIndex];
+  toast({title:'Model · '+(opt?opt.textContent:name),body:'Active on the next run.'});
+};
+document.getElementById('rescanBtn').onclick=async()=>{
+  await loadModels();
+  const n=modelPick.querySelectorAll('option:not([disabled])').length;
+  toast({title:'Rescanned this device',body:n?`${n} model(s) available.`:'No local models found. Is Ollama running?'});
 };
 
 /* settings */

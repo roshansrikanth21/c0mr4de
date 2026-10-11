@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 import httpx
 from fastapi import Body
 
-from c0mr4de import roles, stats
+from c0mr4de import modelscan, roles, stats
 from c0mr4de.agent.backends import build_backend
 from c0mr4de.agent.loop import AgentLoop
 from c0mr4de.agent.prompts import SYSTEM_PROMPT
@@ -49,22 +49,29 @@ def _read_cfg() -> dict:
     return yaml.safe_load((REPO / "config" / "config.yaml").read_text())
 
 
-def _active_model_name(cfg: dict) -> str | None:
-    """The preset the UI last selected, else the config's default, else None."""
+def _runtime_state() -> dict:
     try:
-        name = json.loads(_STATE.read_text()).get("active_model")
-        if name:
-            return name
+        return json.loads(_STATE.read_text())
     except Exception:  # noqa: BLE001
-        pass
-    return cfg.get("active_model")
+        return {}
+
+
+def _active_model_name(cfg: dict) -> str | None:
+    """The model the UI last selected (discovered or preset), else the config's
+    default, else None."""
+    st = _runtime_state()
+    return st.get("active_name") or st.get("active_model") or cfg.get("active_model")
 
 
 def _active_backend_cfg(cfg: dict) -> dict:
-    """Resolve the backend config block to build from: the active named preset
-    under `models:`, falling back to the legacy single `backend:` block."""
+    """Resolve the backend block to build from: the selected model's saved
+    backend (any discovered or preset model), then a named `models:` preset,
+    then the legacy single `backend:` block."""
+    st = _runtime_state()
+    if isinstance(st.get("active_backend"), dict):
+        return st["active_backend"]
+    name = cfg.get("active_model")
     models = cfg.get("models") or {}
-    name = _active_model_name(cfg)
     if name and name in models:
         return models[name]
     return cfg["backend"]
@@ -198,24 +205,29 @@ def _limit_for(name: str) -> str:
 
 @app.get("/models")
 def models_list():
-    """Named model presets from config.yaml `models:`, plus which one is active."""
+    """Models actually available on THIS device - discovered live (Ollama +
+    local OpenAI-compatible servers) plus any config.yaml presets - and which
+    one is active. Re-scans on every call, so it reflects the current machine."""
     cfg = _read_cfg()
-    models = cfg.get("models") or {}
+    found = modelscan.discover_models(cfg)
     active = _active_model_name(cfg)
-    return {"active": active if active in models else None,
-            "models": [{"name": n, "type": m.get("type"),
-                        "model": m.get("model", m.get("type", "?")),
-                        "endpoint": m.get("base_url", m.get("host", "local"))}
-                       for n, m in models.items()]}
+    return {"active": active,
+            "models": [{"name": e["name"], "label": e["label"], "source": e["source"],
+                        "type": e["backend"].get("type"), "model": e["backend"].get("model", "?"),
+                        "endpoint": e["endpoint"], "detail": e.get("detail", "")}
+                       for e in found]}
 
 
 @app.post("/models/active")
 def models_set(name: str = Body(..., embed=True)):
-    """Switch the active model. Takes effect on the next run - no restart."""
+    """Switch the active model to any discovered or preset model. Its backend is
+    saved so the choice survives; takes effect on the next run - no restart."""
     cfg = _read_cfg()
-    if name not in (cfg.get("models") or {}):
-        return {"error": f"unknown model: {name}"}
-    _STATE.write_text(json.dumps({"active_model": name}), encoding="utf-8")
+    entry = modelscan.find_entry(name, cfg)
+    if not entry:
+        return {"error": f"model not found on this device: {name}"}
+    _STATE.write_text(json.dumps({"active_name": name, "active_backend": entry["backend"]}),
+                      encoding="utf-8")
     return {"ok": True, "active": name}
 
 
