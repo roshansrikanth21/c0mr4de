@@ -90,6 +90,22 @@ def test_preset_wins_over_duplicate_discovered(monkeypatch):
     assert len(dups) == 1 and dups[0]["source"] == "preset"
 
 
+def test_ollama_shim_does_not_double_list(monkeypatch):
+    # Ollama up: /api/tags and its :11434/v1 shim report the same model. The
+    # model must appear ONCE (from the native scan), not twice.
+    _open(monkeypatch)
+
+    def fake_get(url, **k):
+        if url.endswith("/api/tags"):
+            return _Resp({"models": [{"name": "qwen2.5-coder:32b", "size": 1}]})
+        if ":11434" in url and url.endswith("/v1/models"):
+            return _Resp({"data": [{"id": "qwen2.5-coder:32b"}]})
+        raise RuntimeError("closed")
+    monkeypatch.setattr(httpx, "get", fake_get)
+    hits = [e for e in ms.discover_models({}) if e["label"] == "qwen2.5-coder:32b"]
+    assert len(hits) == 1 and hits[0]["source"] == "ollama"
+
+
 def test_find_entry_resolves_name(monkeypatch):
     monkeypatch.setattr(ms, "_port_open", lambda *a, **k: False)
     cfg = {"models": {"p": {"type": "ollama", "model": "m", "host": "http://h"}}}

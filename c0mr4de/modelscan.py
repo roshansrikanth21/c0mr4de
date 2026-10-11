@@ -35,18 +35,24 @@ _DEFAULT_OAI_ENDPOINTS = [
 _DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
 
+def _hostport(url: str) -> tuple[str, int]:
+    """Normalized (host, port) for a URL. 'localhost' -> IPv4 literal so the same
+    endpoint written two ways compares equal."""
+    u = urlparse(url if "://" in url else "http://" + url)
+    host = u.hostname or "127.0.0.1"
+    if host == "localhost":
+        host = "127.0.0.1"
+    port = u.port or (443 if u.scheme == "https" else 80)
+    return (host, port)
+
+
 def _port_open(url: str, timeout: float = 0.25) -> bool:
     """Fast gate: is anything listening on this URL's host:port? A closed local
     port is refused near-instantly, so we never pay an HTTP timeout for a server
-    that isn't running. 'localhost' is forced to the IPv4 literal to skip DNS and
-    the IPv6/IPv4 dual-stack retry that otherwise doubles the wait per probe."""
+    that isn't running. IPv4 is forced (see _hostport) to skip DNS and the
+    IPv6/IPv4 dual-stack retry that otherwise doubles the wait per probe."""
     try:
-        u = urlparse(url if "://" in url else "http://" + url)
-        host = u.hostname or "127.0.0.1"
-        if host == "localhost":
-            host = "127.0.0.1"
-        port = u.port or (443 if u.scheme == "https" else 80)
-        with socket.create_connection((host, port), timeout=timeout):
+        with socket.create_connection(_hostport(url), timeout=timeout):
             return True
     except Exception:  # noqa: BLE001
         return False
@@ -140,6 +146,11 @@ def discover_models(cfg: dict | None = None) -> list[dict]:
     oai_endpoints += [e for e in (cfg.get("local_endpoints") or []) if isinstance(e, str)]
     oai_endpoints += [b["base_url"] for b in presets.values() if b.get("base_url")]
     oai_endpoints = list(dict.fromkeys(oai_endpoints))  # de-dup, keep order
+    # Drop any endpoint that is an Ollama host's own OpenAI shim (e.g. :11434/v1):
+    # the native /api/tags scan already covers those models with better metadata,
+    # so probing the shim too would list every Ollama model a second time.
+    ollama_hostports = {_hostport(h) for h in ollama_hosts}
+    oai_endpoints = [e for e in oai_endpoints if _hostport(e) not in ollama_hostports]
 
     # Probe everything concurrently - total time ~ the single slowest probe.
     with ThreadPoolExecutor(max_workers=12) as ex:
