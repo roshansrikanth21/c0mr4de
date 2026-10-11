@@ -200,8 +200,12 @@
   /* ============ COMPOSER ============ */
   #composer{flex:none;border-top:1px solid var(--line);padding:11px 18px 13px;background:var(--surface)}
   #composer .wrap{max-width:800px;margin:0 auto}
-  .ctrls{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+  .ctrls{display:flex;align-items:center;gap:9px;margin-bottom:9px;flex-wrap:wrap}
   .modes{display:inline-flex;border:1px solid var(--line2);border-radius:var(--r-sm);overflow:hidden}
+  .selctrl{background:var(--surface2);border:1px solid var(--line2);color:var(--muted);border-radius:var(--r-sm);
+    padding:6px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;max-width:200px}
+  .selctrl:hover{color:var(--txt)} .selctrl:focus{outline:none;border-color:var(--accent)}
+  .selctrl option{background:var(--surface2);color:var(--txt)}
   .mode{background:transparent;border:none;color:var(--faint);padding:6px 14px;cursor:pointer;font-size:11.5px;font-weight:500;
     font-family:var(--mono);transition:background .14s,color .14s}
   .mode.on{background:var(--accent);color:var(--accent-ink);font-weight:600}
@@ -347,6 +351,8 @@
     <div id="composer"><div class="wrap">
       <div class="ctrls">
         <span class="modes"><button class="mode on" data-mode="agent">agent</button><button class="mode" data-mode="swarm">swarm</button></span>
+        <select class="selctrl" id="rolePick" title="Role - scopes which tools and methodology this session uses"></select>
+        <select class="selctrl" id="modelPick" title="Model - active backend; applies to the next run"></select>
         <button class="ghost" id="osintBtn"><svg class="ic" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg> osint graph</button>
         <div id="drop"><svg class="ic" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> attach a file or screenshot <span class="files"></span></div>
       </div>
@@ -603,6 +609,53 @@ async function loadChats(){
   }
 }
 
+/* roles + model switcher */
+let selectedRole='general', roleDigests={};
+const rolePick=document.getElementById('rolePick'), modelPick=document.getElementById('modelPick');
+async function loadRoles(){
+  try{
+    const j=await fetch('/roles').then(r=>r.json());
+    rolePick.innerHTML='';
+    for(const d of j.roles){
+      roleDigests[d.name]=d;
+      const o=document.createElement('option'); o.value=d.name;
+      o.textContent=d.label+(d.tool_count!=null?` · ${d.tool_count} tools`:'');
+      o.title=d.desc; rolePick.appendChild(o);
+    }
+    rolePick.value=selectedRole;
+  }catch(e){}
+}
+rolePick.onchange=async()=>{
+  selectedRole=rolePick.value;
+  const d=roleDigests[selectedRole]||{};
+  if(currentChat){
+    await fetch('/chats/'+currentChat+'/role',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({role:selectedRole})});
+  }
+  toast({title:'Role · '+(d.label||selectedRole),body:esc(d.desc||'')+(d.tool_count!=null?` (${d.tool_count} tools)`:'')});
+};
+async function loadModels(){
+  try{
+    const j=await fetch('/models').then(r=>r.json());
+    modelPick.innerHTML='';
+    if(!j.models.length){const o=document.createElement('option');o.textContent='config backend';o.disabled=true;modelPick.appendChild(o);modelPick.disabled=true;return;}
+    modelPick.disabled=false;
+    for(const m of j.models){
+      const o=document.createElement('option'); o.value=m.name;
+      o.textContent=m.name; o.title=`${m.type} · ${m.model} · ${m.endpoint}`;
+      modelPick.appendChild(o);
+    }
+    if(j.active)modelPick.value=j.active;
+  }catch(e){}
+}
+modelPick.onchange=async()=>{
+  const name=modelPick.value;
+  const r=await fetch('/models/active',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name})}).then(r=>r.json());
+  if(r.error){toast({level:'err',title:'Switch failed',body:esc(r.error)});return;}
+  toast({title:'Model · '+name,body:'Active on the next run.'});
+};
+
 /* settings */
 const ov=document.getElementById('ov');
 document.getElementById('gear').onclick=openSettings;
@@ -675,12 +728,13 @@ document.getElementById('scSet').onclick=async()=>{
   document.getElementById('scCur').textContent=j.brief||'no scope set.'; toast({title:'Rules of engagement set',body:'Out-of-scope hosts will be blocked.'});
 };
 document.getElementById('scClear').onclick=async()=>{await fetch('/scope/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});loadScope();};
-async function newChat(){toggleSide(false);const r=await fetch('/chats/new',{method:'POST'});const c=await r.json();currentChat=c.id;resetFeed();await loadChats();}
+async function newChat(){toggleSide(false);const r=await fetch('/chats/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:selectedRole})});const c=await r.json();currentChat=c.id;resetFeed();await loadChats();}
 function resetFeed(){tools=0;stepBuf=[];stTools.textContent='0';stTarget.textContent='-';setState('idle');showActivity(false);showEmpty();}
 async function openChat(id){
   toggleSide(false);
   currentChat=id; inner.innerHTML=skel(4,true); tools=0; stepBuf=[]; loadChats();
   const r=await fetch('/chats/'+id); const doc=await r.json(); if(doc.error){inner.innerHTML='';return;}
+  selectedRole=doc.role||'general'; if(rolePick)rolePick.value=selectedRole;
   inner.innerHTML='';
   for(const turn of doc.turns){
     if(turn.role==='user') add('you',`<span class="p">operator</span><span class="msg">${esc(turn.content)}</span>`);
@@ -780,7 +834,7 @@ function endRun(state){
 
 async function go(){
   const task=taskEl.value.trim(); if(!task&&attachments.length===0)return;
-  if(!currentChat){const r=await fetch('/chats/new',{method:'POST'});currentChat=(await r.json()).id;}
+  if(!currentChat){const r=await fetch('/chats/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:selectedRole})});currentChat=(await r.json()).id;}
   let full=task, ah='';
   for(const a of attachments){full+=`\n\n[attached file: ${a.path}]`;if(a.is_image&&a.ocr)full+=`\n[OCR of ${a.name}]:\n${a.ocr}`;
     ah+=a.dataUrl?`<div class="attach">${esc(a.name)}<img src="${a.dataUrl}"/></div>`:`<div class="attach">${esc(a.name)}</div>`;}
@@ -797,6 +851,7 @@ async function go(){
   currentES=es;
   es.onmessage=ev=>{const {kind,data}=JSON.parse(ev.data);
     if(kind==='backend'){const nm=data.name.replace('rotating:','').replace(/openai-compat:|ollama:/g,'');backendEl.textContent=nm;if(live)setActivity('Connected · '+nm);}
+    else if(kind==='role'){if(live&&data.name&&data.name!=='general')setActivity('Role · '+(data.label||data.name));}
     else if(kind==='done'){flushSteps();es.close();endRun('done');}
     else renderEvent(kind,data);
   };
@@ -804,6 +859,8 @@ async function go(){
 }
 showEmpty();
 loadChats();
+loadRoles();
+loadModels();
 </script>
 </body>
 </html>

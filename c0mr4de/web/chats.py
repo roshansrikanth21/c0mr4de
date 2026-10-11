@@ -23,15 +23,17 @@ def list_chats() -> list[dict]:
     for f in CHATS.glob("*.json"):
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
-            out.append({"id": d["id"], "title": d.get("title", "untitled"), "updated": d.get("updated", 0)})
+            out.append({"id": d["id"], "title": d.get("title", "untitled"),
+                        "updated": d.get("updated", 0), "role": d.get("role", "general")})
         except Exception:  # noqa: BLE001
             continue
     return sorted(out, key=lambda c: c["updated"], reverse=True)
 
 
-def new_chat() -> dict:
+def new_chat(role: str = "general") -> dict:
     cid = uuid.uuid4().hex[:12]
-    doc = {"id": cid, "title": "new session", "created": time.time(), "updated": time.time(), "turns": []}
+    doc = {"id": cid, "title": "new session", "role": role,
+           "created": time.time(), "updated": time.time(), "turns": []}
     _path(cid).write_text(json.dumps(doc), encoding="utf-8")
     return doc
 
@@ -71,6 +73,18 @@ def rename_chat(chat_id: str, title: str) -> bool:
     if doc is None:
         return False
     doc["title"] = title[:80]
+    _path(chat_id).write_text(json.dumps(doc), encoding="utf-8")
+    return True
+
+
+def set_role(chat_id: str, role: str) -> bool:
+    """Set this chat's role (e.g. bug_bounty, ctf, recon). Scopes which tools
+    the agent can call and what methodology focus it runs with."""
+    doc = get_chat(chat_id)
+    if doc is None:
+        return False
+    doc["role"] = role
+    doc["updated"] = time.time()
     _path(chat_id).write_text(json.dumps(doc), encoding="utf-8")
     return True
 

@@ -1,6 +1,29 @@
 # Copy this to config.yaml and fill in your choice. config.yaml is
 # gitignored so your API keys never get committed.
 
+# --- Optional: multiple models you can switch between live from the UI ---
+# Define named presets under `models:` and point `active_model:` at one. The
+# web UI's model dropdown switches between them; the choice is remembered in
+# config/runtime.json and takes effect on the next run (no restart). Each
+# preset takes the same shape as the `backend:` block below. If `active_model`
+# is unset or missing, c0mr4de falls back to the single `backend:` block.
+#
+# active_model: local-120b
+# models:
+#   local-120b:
+#     type: openai_compatible
+#     model: gpt-oss-120b
+#     base_url: http://localhost:8080/v1   # your Colibri / llama.cpp / vLLM endpoint
+#     api_key: local
+#   qwen-coder-32b:
+#     type: ollama
+#     model: qwen2.5-coder:32b
+#     host: http://localhost:11434
+#   cloud-claude:
+#     type: anthropic
+#     model: claude-sonnet-5
+#     # api_key via ANTHROPIC_API_KEY env var
+
 backend:
   # --- Option 1: free, local, unlimited tokens, slower/weaker reasoning ---
   type: ollama

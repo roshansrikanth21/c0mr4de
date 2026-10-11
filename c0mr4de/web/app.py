@@ -24,9 +24,10 @@ from fastapi.staticfiles import StaticFiles
 import httpx
 from fastapi import Body
 
-from c0mr4de import stats
+from c0mr4de import roles, stats
 from c0mr4de.agent.backends import build_backend
 from c0mr4de.agent.loop import AgentLoop
+from c0mr4de.agent.prompts import SYSTEM_PROMPT
 from c0mr4de.tools import build_default_registry
 from c0mr4de.tools.files import WORKSPACE
 from c0mr4de.tools.ocr import ocr_image
@@ -39,10 +40,38 @@ UPLOADS.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="c0mr4de")
 
+# Where the live model choice is stored. Separate from config.yaml so switching
+# models in the UI never rewrites the hand-maintained (and gitignored) config.
+_STATE = REPO / "config" / "runtime.json"
+
+
+def _read_cfg() -> dict:
+    return yaml.safe_load((REPO / "config" / "config.yaml").read_text())
+
+
+def _active_model_name(cfg: dict) -> str | None:
+    """The preset the UI last selected, else the config's default, else None."""
+    try:
+        name = json.loads(_STATE.read_text()).get("active_model")
+        if name:
+            return name
+    except Exception:  # noqa: BLE001
+        pass
+    return cfg.get("active_model")
+
+
+def _active_backend_cfg(cfg: dict) -> dict:
+    """Resolve the backend config block to build from: the active named preset
+    under `models:`, falling back to the legacy single `backend:` block."""
+    models = cfg.get("models") or {}
+    name = _active_model_name(cfg)
+    if name and name in models:
+        return models[name]
+    return cfg["backend"]
+
 
 def _load_backend():
-    cfg = yaml.safe_load((REPO / "config" / "config.yaml").read_text())
-    return build_backend(cfg["backend"])
+    return build_backend(_active_backend_cfg(_read_cfg()))
 
 
 @app.get("/")
@@ -66,8 +95,22 @@ def chats_list():
 
 
 @app.post("/chats/new")
-def chats_new():
-    return chats.new_chat()
+def chats_new(role: str = Body("general", embed=True)):
+    return chats.new_chat(role=role if role in roles.ROLES else "general")
+
+
+@app.post("/chats/{chat_id}/role")
+def chats_set_role(chat_id: str, role: str = Body(..., embed=True)):
+    if role not in roles.ROLES:
+        return {"error": f"unknown role: {role}"}
+    ok = chats.set_role(chat_id, role)
+    return {"set": ok, "role": role, "digest": roles.role_digest(role, build_default_registry())}
+
+
+@app.get("/roles")
+def roles_list():
+    reg = build_default_registry()
+    return {"roles": [roles.role_digest(n, reg) for n in roles.role_names()]}
 
 
 @app.get("/chats/{chat_id}")
@@ -153,10 +196,33 @@ def _limit_for(name: str) -> str:
     return "unknown"
 
 
+@app.get("/models")
+def models_list():
+    """Named model presets from config.yaml `models:`, plus which one is active."""
+    cfg = _read_cfg()
+    models = cfg.get("models") or {}
+    active = _active_model_name(cfg)
+    return {"active": active if active in models else None,
+            "models": [{"name": n, "type": m.get("type"),
+                        "model": m.get("model", m.get("type", "?")),
+                        "endpoint": m.get("base_url", m.get("host", "local"))}
+                       for n, m in models.items()]}
+
+
+@app.post("/models/active")
+def models_set(name: str = Body(..., embed=True)):
+    """Switch the active model. Takes effect on the next run - no restart."""
+    cfg = _read_cfg()
+    if name not in (cfg.get("models") or {}):
+        return {"error": f"unknown model: {name}"}
+    _STATE.write_text(json.dumps({"active_model": name}), encoding="utf-8")
+    return {"ok": True, "active": name}
+
+
 @app.get("/settings")
 def settings_get():
-    cfg = yaml.safe_load((REPO / "config" / "config.yaml").read_text())
-    b = cfg["backend"]
+    cfg = _read_cfg()
+    b = _active_backend_cfg(cfg)
     members = b.get("chain", [b]) if b.get("type") == "rotating" else [b]
     out = []
     for m in members:
@@ -219,6 +285,10 @@ def run(task: str, chat_id: str = "", mode: str = "agent"):
                 chats.append_turn(chat_id, "user", task)
             backend = _load_backend()
             events.put({"kind": "backend", "data": {"name": backend.name}})
+            # This chat's role scopes the toolset and the methodology focus.
+            doc = chats.get_chat(chat_id) if chat_id else None
+            role = (doc or {}).get("role", "general")
+            events.put({"kind": "role", "data": {"name": role, "label": roles.get_role(role)["label"]}})
             if mode == "swarm":
                 from c0mr4de.swarm.orchestrator import Swarm
                 bb = Swarm(backend=backend, on_event=on_event, should_stop=cancel.is_set).run(
@@ -228,9 +298,11 @@ def run(task: str, chat_id: str = "", mode: str = "agent"):
             else:
                 recap = chats.prior_context(chat_id) if chat_id else ""
                 full_task = f"{task}\n\n[earlier in this session]\n{recap}" if recap else task
-                registry = build_default_registry()
+                registry = roles.filter_registry(build_default_registry(), role)
+                focus = roles.role_focus(role)
+                sys_prompt = f"{SYSTEM_PROMPT}\n\n## Active role: {role}\n{focus}" if focus else SYSTEM_PROMPT
                 loop = AgentLoop(backend=backend, tools=registry, verbose=False,
-                                 on_event=on_event, should_stop=cancel.is_set)
+                                 on_event=on_event, should_stop=cancel.is_set, system_prompt=sys_prompt)
                 result = loop.run(full_task)
             if chat_id:
                 chats.append_turn(chat_id, "summary", result, collected)
