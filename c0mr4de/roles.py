@@ -11,11 +11,12 @@ from c0mr4de.tools.base import ToolRegistry
 
 DEFAULT_ROLE = "general"
 
-# Tools every role gets - workspace, memory, reporting, PoC, self-check.
+# Tools every role gets - workspace, memory, reporting, PoC, deterministic
+# verification (the core value prop), self-check.
 _ALWAYS = {
     "read_file", "write_file", "list_workspace", "worklog", "read_worklog",
     "ask_operator", "consult_knowledge", "recall_related", "write_report",
-    "make_poc", "env_report", "ocr_image",
+    "make_poc", "verify_finding", "env_report", "ocr_image",
 }
 
 ROLES: dict[str, dict] = {
@@ -24,6 +25,18 @@ ROLES: dict[str, dict] = {
         "desc": "Full toolset - a generalist operator with every capability enabled.",
         "tools": None,  # None = no filter (all tools)
         "focus": "",
+    },
+    "verify": {
+        "label": "Verify",
+        "desc": "Deterministically confirm or kill a single claimed finding - reproduce the hard signal, no guessing.",
+        "tools": {"verify_finding", "http_request", "decode_jwt", "tamper_jwt", "browser_navigate",
+                  "browser_eval", "browser_storage", "oob_start", "oob_poll"},
+        "focus": ("You are a verification specialist. Given a finding (ideally a raw HTTP request plus a claim), "
+                  "your ONLY job is to confirm or kill it deterministically with verify_finding - reproduce the "
+                  "hard signal (timing, OOB callback, browser execution, cross-object differential, signature "
+                  "tampering). Report CONFIRMED only when the tool returns CONFIRMED, quoting its evidence. If it "
+                  "returns UNCONFIRMED or INCONCLUSIVE, say so plainly and say what extra input would settle it. "
+                  "A response code, a reflection, or a plausible-looking response is NEVER a confirmation."),
     },
     "bug_bounty": {
         "label": "Bug bounty",

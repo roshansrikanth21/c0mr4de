@@ -206,6 +206,23 @@
     padding:6px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;max-width:200px}
   .selctrl:hover{color:var(--txt)} .selctrl:focus{outline:none;border-color:var(--accent)}
   .selctrl option{background:var(--surface2);color:var(--txt)}
+  .vrow{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+  .vin{flex:1;min-width:160px;background:var(--surface2);border:1px solid var(--line2);color:var(--txt);
+    border-radius:var(--r-sm);padding:8px 11px;font-size:12px;font-family:var(--mono)}
+  .vin:focus{outline:none;border-color:var(--accent)}
+  #vReq,#vControl{width:100%;background:var(--surface2);border:1px solid var(--line2);color:var(--txt);
+    border-radius:var(--r-sm);padding:9px 11px;font-family:var(--mono);font-size:11.5px;resize:vertical;margin-top:9px}
+  #vReq:focus,#vControl:focus{outline:none;border-color:var(--accent)}
+  #vRun{background:var(--accent);color:var(--accent-ink);border:none;border-radius:var(--r-sm);
+    padding:8px 20px;font-weight:600;cursor:pointer;font-size:12px}
+  .verdict{border:1px solid var(--line2);border-radius:var(--r-sm);padding:12px 14px;font-family:var(--mono);font-size:12px}
+  .verdict.ok{border-color:var(--accent);background:var(--accent-dim)}
+  .verdict.no{border-color:var(--line2)}
+  .verdict .vlabel{font-weight:700;letter-spacing:.03em;font-size:13px}
+  .verdict .vdetail{margin-top:7px;color:var(--txt);font-family:var(--font);font-size:12.5px;line-height:1.5}
+  .verdict .vev{margin-top:9px;white-space:pre-wrap;color:var(--muted);line-height:1.6}
+  .verdict .vrepro{margin-top:9px;white-space:pre;background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--r-sm);padding:9px 11px;font-size:11px;overflow-x:auto;color:var(--txt)}
   .mode{background:transparent;border:none;color:var(--faint);padding:6px 14px;cursor:pointer;font-size:11.5px;font-weight:500;
     font-family:var(--mono);transition:background .14s,color .14s}
   .mode.on{background:var(--accent);color:var(--accent-ink);font-weight:600}
@@ -355,6 +372,7 @@
         <select class="selctrl" id="modelPick" title="Model - active backend; applies to the next run"></select>
         <button class="ghost" id="rescanBtn" title="Rescan this device for installed models"><svg class="ic" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         <button class="ghost" id="osintBtn"><svg class="ic" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg> osint graph</button>
+        <button class="ghost" id="verifyBtn" title="Deterministically verify a single finding"><svg class="ic" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg> verify</button>
         <div id="drop"><svg class="ic" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> attach a file or screenshot <span class="files"></span></div>
       </div>
       <input type="file" id="picker" multiple hidden />
@@ -406,6 +424,37 @@
       <a class="ghost rbtn" id="rdownload" style="margin-left:auto" download><svg class="ic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> download</a>
       <span class="x" id="rclose" style="margin-left:12px"><svg class="ic" viewBox="0 0 24 24" width="17" height="17"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
     <div class="mb" id="rbody"></div>
+  </div></div>
+
+  <!-- VERIFY -->
+  <div id="vov" class="overlay"><div id="vmodal" class="modalbox">
+    <div class="mh"><b>Verify a finding</b>
+      <span style="color:var(--faint);margin-left:10px;font-size:11px">deterministic - reproduces the hard signal, no guessing</span>
+      <span class="x" id="vclose" style="margin-left:auto"><svg class="ic" viewBox="0 0 24 24" width="17" height="17"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+    <div class="mb">
+      <div class="subnote">Paste a raw HTTP request (Burp: right-click &rarr; Copy to file) or just a URL with the query string. Pick what you suspect, name the injection point, and Verify.</div>
+      <textarea id="vReq" rows="7" placeholder="GET /item?id=5 HTTP/1.1&#10;Host: target.com&#10;Authorization: Bearer ...&#10;&#10;(or just paste a URL)"></textarea>
+      <div class="vrow">
+        <select class="selctrl" id="vClaim" title="what you suspect">
+          <option value="auto">auto</option><option value="sqli">sqli</option><option value="xss">xss</option>
+          <option value="ssrf">ssrf (blind, OOB)</option><option value="open_redirect">open redirect</option>
+          <option value="idor">idor</option><option value="jwt">jwt</option>
+        </select>
+        <input id="vPoint" class="vin" placeholder="injection point, e.g. id or header:X-Forwarded-For" />
+      </div>
+      <div class="vrow" id="vIdorRow" style="display:none">
+        <textarea id="vControl" rows="4" placeholder="idor: the SAME request with YOUR OWN id (control, to prove cross-account access)"></textarea>
+      </div>
+      <div class="vrow" id="vJwtRow" style="display:none">
+        <input id="vField" class="vin" placeholder="jwt field to tamper, e.g. role" />
+        <input id="vValue" class="vin" placeholder="new value, e.g. admin" />
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+        <button id="vRun">verify</button>
+        <span id="vBusy" class="subnote" style="display:none">reproducing the signal…</span>
+      </div>
+      <div id="vResult" style="margin-top:14px"></div>
+    </div>
   </div></div>
 
   <div id="gov"><span id="gclose"><svg class="ic" viewBox="0 0 24 24" width="22" height="22"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span><iframe id="gframe"></iframe></div>
@@ -835,6 +884,42 @@ document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{
 const gov=document.getElementById('gov'), gframe=document.getElementById('gframe');
 document.getElementById('gclose').onclick=()=>{gov.classList.remove('on');gframe.src='about:blank';};
 gov.onclick=e=>{if(e.target===gov){gov.classList.remove('on');gframe.src='about:blank';}};
+/* verify a finding */
+const vov=document.getElementById('vov');
+document.getElementById('verifyBtn').onclick=()=>{toggleSide(false);vov.classList.add('on');};
+document.getElementById('vclose').onclick=()=>vov.classList.remove('on');
+vov.onclick=e=>{if(e.target===vov)vov.classList.remove('on');};
+document.getElementById('vClaim').onchange=function(){
+  document.getElementById('vIdorRow').style.display=this.value==='idor'?'flex':'none';
+  document.getElementById('vJwtRow').style.display=this.value==='jwt'?'flex':'none';
+};
+document.getElementById('vRun').onclick=async()=>{
+  const raw=document.getElementById('vReq').value.trim();
+  if(!raw){toast({title:'Nothing to verify',body:'Paste a request or a URL first.'});return;}
+  const payload={claim:document.getElementById('vClaim').value,
+    point:document.getElementById('vPoint').value.trim(),
+    control_request:document.getElementById('vControl').value.trim(),
+    field:document.getElementById('vField').value.trim(),
+    value:document.getElementById('vValue').value.trim()};
+  if(/^https?:\/\//i.test(raw) && raw.split('\n').length===1){payload.url=raw;} else {payload.request=raw;}
+  const busy=document.getElementById('vBusy'), res=document.getElementById('vResult');
+  busy.style.display='inline'; res.innerHTML='';
+  try{
+    const j=await fetch('/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    busy.style.display='none';
+    if(j.error){res.innerHTML=`<div class="verdict no"><span class="vlabel">ERROR</span><div class="vdetail">${esc(j.error)}</div></div>`;return;}
+    const ok=j.verdict==='CONFIRMED';
+    const evid=(j.evidence||[]).map(e=>'  - '+esc(e)).join('\n');
+    res.innerHTML=`<div class="verdict ${ok?'ok':'no'}">`+
+      `<span class="vlabel" style="color:${ok?'var(--accent)':'var(--muted)'}">[${esc(j.verdict)}]</span>`+
+      (j.technique?`<span style="color:var(--faint)"> · ${esc(j.technique)}</span>`:'')+
+      (j.detail?`<div class="vdetail">${esc(j.detail)}</div>`:'')+
+      (evid?`<div class="vev">evidence:\n${evid}</div>`:'')+
+      (j.reproduction?`<div class="vrepro">${esc(j.reproduction)}</div>`:'')+
+      (!ok?'<div class="vdetail" style="color:var(--faint);margin-top:8px">Not confirmed - do not report on this evidence alone.</div>':'')+
+      `</div>`;
+  }catch(e){busy.style.display='none';res.innerHTML=`<div class="verdict no"><span class="vlabel">ERROR</span><div class="vdetail">${esc(String(e))}</div></div>`;}
+};
 document.getElementById('osintBtn').onclick=async()=>{
   const j=await fetch('/osint/latest').then(r=>r.json());
   if(!j.graph){toast({title:'No OSINT graph yet',body:'Run an OSINT task (e.g. "osint the username &lt;handle&gt;"). The agent builds the graph, then view it here.'});return;}

@@ -372,6 +372,30 @@ def reports_download(name: str):
     return FileResponse(str(p), media_type="text/markdown", filename=name)
 
 
+@app.post("/verify")
+def verify_route(payload: dict = Body(...)):
+    """Deterministically verify one finding and return the structured verdict.
+    Runs the hard-signal check in code (no model) - CONFIRMED only when proven."""
+    from c0mr4de.verifier import parse_http_request, verify
+    base = payload.get("base_scheme") or "https"
+    try:
+        raw = (payload.get("request") or "").strip()
+        if raw:
+            req = parse_http_request(raw, base)
+        elif (payload.get("url") or "").strip():
+            req = {"method": (payload.get("method") or "GET").upper(), "url": payload["url"],
+                   "headers": payload.get("headers") or {}, "body": payload.get("body") or ""}
+        else:
+            return {"error": "provide `request` (a raw HTTP request) or `url`."}
+        ctrl = (parse_http_request(payload["control_request"], base)
+                if (payload.get("control_request") or "").strip() else None)
+    except ValueError as exc:
+        return {"error": f"could not parse the request: {exc}"}
+    vd = verify(payload.get("claim") or "auto", req, point=payload.get("point") or "",
+                control_request=ctrl, field_name=payload.get("field") or "", value=payload.get("value") or "")
+    return vd.to_dict()
+
+
 @app.get("/osint/latest")
 def osint_latest():
     """Path of the most recent OSINT graph, for the UI to embed."""
