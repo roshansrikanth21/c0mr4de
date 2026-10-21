@@ -63,22 +63,39 @@ class Hivemind:
             return self._make_backend()
         return build_backend(_active_backend_cfg())
 
+    def _concurrency(self) -> int:
+        """How many specialists in a phase may run at once. A local Ollama model
+        serves one model on one device - concurrent 7B requests thrash and can
+        wedge the box, so local runs go SEQUENTIAL. A hosted OpenAI-compatible API
+        (GLM/DeepSeek/etc.) handles real concurrency, so there we fan out."""
+        if self._make_backend:
+            return 6
+        try:
+            return 1 if _active_backend_cfg().get("type") == "ollama" else 6
+        except Exception:  # noqa: BLE001
+            return 1
+
     def run(self, target: str, objective: str) -> Blackboard:
         bb = Blackboard(target=target, objective=objective)
         for group in PHASES:
             if self.should_stop():
                 break
             phase = group[0].phase if group else ""
+            parallel = min(len(group), self._concurrency()) > 1
             self.on_event("phase", {"name": phase, "specialists": [p.name for p in group],
-                                    "counts": bb.counts()})
+                                    "parallel": parallel, "counts": bb.counts()})
             self._run_phase(group, bb, objective, target)
         return bb
 
     def _run_phase(self, group, bb, objective, target) -> None:
-        if len(group) == 1:
-            self._run_specialist(group[0], bb, objective, target)
+        workers = min(len(group), self._concurrency())
+        if workers <= 1:
+            for p in group:                       # local backend: sequential (avoid thrashing one model)
+                if self.should_stop():
+                    break
+                self._run_specialist(p, bb, objective, target)
             return
-        with ThreadPoolExecutor(max_workers=min(len(group), 6)) as ex:
+        with ThreadPoolExecutor(max_workers=workers) as ex:   # hosted backend: real parallelism
             futs = [ex.submit(self._run_specialist, p, bb, objective, target) for p in group]
             for f in futs:
                 f.result()   # surface exceptions; each specialist already guards its own tools

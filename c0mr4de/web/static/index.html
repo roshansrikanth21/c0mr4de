@@ -823,7 +823,7 @@ function renderEvent(kind,data){
   const ag=data.agent?`<span style="color:var(--faint)">[${esc(data.agent)}]</span> `:'';
   if(kind==='phase'){flushSteps();
     const names=(data.specialists||[]).join(', ');
-    const par=(data.specialists||[]).length>1?' (parallel)':'';
+    const par=data.parallel?' (parallel)':((data.specialists||[]).length>1?' (sequential)':'');
     add('phase',`phase: ${esc(data.name)}${par}<span class="sub">${esc(names)}</span>`);
     if(live){actPhase.textContent=data.name;setActivity('phase: '+data.name+par);}
     return;}
