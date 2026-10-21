@@ -131,11 +131,13 @@ class Hivemind:
         'I apologize for the confusion...' as findings)."""
         post = {"surface": bb.surface_item, "leads": bb.lead,
                 "confirmed": bb.confirm, "notes": bb.note}.get(profile.posts, bb.note)
+        posted_confirm = False
         for data in captured:
             name, result = data.get("name"), data.get("result", "")
             low = result.lower()
             if "[confirmed]" in low:                                   # verifier ground truth
                 bb.confirm(profile.name, result.splitlines()[0][:300])
+                posted_confirm = True   # a tool confirmation exists; don't also post the prose summary
             elif name == "verify_finding" and ("[unconfirmed]" in low or "[inconclusive]" in low):
                 bb.lead(profile.name, result.splitlines()[0][:220])
             elif name in ("test_injection", "test_all_params") and "likely-vulnerable" in low:
@@ -143,11 +145,13 @@ class Hivemind:
             elif _looks_like_finding(result):
                 post(profile.name, result[:400])
         # The summary is prose, not evidence. Keep only: a reconciled CONFIRMED (the
-        # hardened loop appends tool-verified proof), recon's surface synthesis, and the
-        # report note. Exploit/validate narration is dropped.
+        # hardened loop appends tool-verified proof) when the tool result was not already
+        # captured above, recon's surface synthesis, and the report note. Exploit/validate
+        # narration is dropped.
         if summary and summary.strip():
-            if "[CONFIRMED]" in summary or "CONFIRMED (tool-verified" in summary:
-                bb.confirm(profile.name, summary.strip()[:600])
+            if ("[CONFIRMED]" in summary or "CONFIRMED (tool-verified" in summary):
+                if not posted_confirm:   # don't double-count a finding already captured from its tool result
+                    bb.confirm(profile.name, summary.strip()[:600])
             elif profile.phase == "recon":
                 bb.surface_item(profile.name, summary.strip()[:500])
             elif profile.phase == "report":
