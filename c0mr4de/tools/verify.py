@@ -27,10 +27,28 @@ def verify_finding(claim: str = "auto", request: str = "", url: str = "", method
                 return "ERROR: headers must be a JSON object string, e.g. '{\"Authorization\": \"Bearer x\"}'"
             req = {"method": (method or "GET").upper(), "url": url, "headers": hdrs, "body": body or ""}
         else:
-            return "ERROR: provide either `request` (a raw HTTP request) or `url`."
+            ex = {
+                "sqli": "verify_finding(claim='sqli', url='http://host/item?id=1', point='id')",
+                "xss": "verify_finding(claim='xss', url='http://host/search?q=x', point='q')",
+                "open_redirect": "verify_finding(claim='open_redirect', url='http://host/go?next=/a', point='next')",
+                "ssrf": "verify_finding(claim='ssrf', url='http://host/fetch?u=x', point='u')",
+                "idor": "verify_finding(claim='idor', url='http://host/u?id=2', "
+                        "control_request='GET http://host/u?id=1 HTTP/1.1', victim_marker='victim@x.com')",
+                "jwt": "verify_finding(claim='jwt', url='http://host/me', field='role', value='admin')",
+            }.get(claim, "verify_finding(claim='sqli', url='http://host/path?p=1', point='p')")
+            return (f"ERROR: verify_finding needs a target. Pass `url` (the exact URL you tested) and `point` "
+                    f"(the parameter name), or a raw `request`. This is not a missing tool - just call it again "
+                    f"with the arguments. Example for {claim}: {ex}")
         ctrl = parse_http_request(control_request, base_scheme) if (control_request or "").strip() else None
     except ValueError as exc:
         return f"ERROR parsing request: {exc}"
+    # Convenience: when the param is obvious (one query string) and the model forgot `point`,
+    # infer it - weak models often pass the url but omit the param name.
+    if not point and claim in ("sqli", "xss", "open_redirect", "ssrf", "auto"):
+        import urllib.parse as _up
+        qs = _up.parse_qs(_up.urlparse(req["url"]).query)
+        if qs:
+            point = list(qs.keys())[0]
     return verify(claim, req, point=point, control_request=ctrl, field_name=field, value=value,
                   victim_marker=victim_marker).to_text()
 

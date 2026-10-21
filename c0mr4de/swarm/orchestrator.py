@@ -26,6 +26,10 @@ from c0mr4de.swarm.blackboard import Blackboard
 
 _FINDING_MARKERS = ("BENCH{", "flag{", "FLAG{", "MIRAGE{", "premium unlocked",
                     "successfully solved", "<<<", '"role": "admin"', '"role":"admin"')
+# Deterministic-confirmation notes that test_injection's engine (_analyze, shared with the
+# verifier) emits - the same hard signals the verifier confirms on.
+_TI_CONFIRM = ("db error on a single-quote", "materially different", "(time-based) confirmed",
+               "xss confirmed")
 
 
 def _looks_like_finding(text: str) -> bool:
@@ -164,7 +168,16 @@ class Hivemind:
             elif name == "note_gap" and "gap noted" in low:           # feedback to recon
                 bb.gap(profile.name, result.split(":", 1)[-1].strip()[:220])
             elif name in ("test_injection", "test_all_params") and "likely-vulnerable" in low:
-                bb.lead(profile.name, result[:300])
+                # test_injection runs the SAME deterministic engine as the verifier (_analyze), so
+                # an error-based / boolean / time / executed signal IS a confirmation - count it,
+                # rather than waiting for the model to re-call verify_finding with precise args.
+                if any(m in low for m in _TI_CONFIRM):
+                    line = next((ln for ln in result.splitlines()
+                                 if any(m in ln.lower() for m in _TI_CONFIRM)), result.splitlines()[0])
+                    bb.confirm(profile.name, line.strip()[:300])
+                    posted_confirm = True
+                else:
+                    bb.lead(profile.name, result[:300])
             elif _looks_like_finding(result):
                 post(profile.name, result[:400])
         # The summary is prose, not evidence. Keep only: a reconciled CONFIRMED (the

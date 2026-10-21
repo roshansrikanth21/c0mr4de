@@ -14,6 +14,11 @@ from __future__ import annotations
 
 _ERR_MARKERS = ("error", "not available", "unavailable", "timed out", "could not launch",
                 "not on path", "no response", "not installed")
+# Markers of a tool that genuinely CANNOT run here (missing binary/docker/network) - as opposed
+# to a fixable argument error. The "switch away from this tool" steer should fire only on these,
+# so a weak model that calls a good tool with bad args is told to fix the args, not abandon it.
+_UNAVAIL_MARKERS = ("not available", "unavailable", "timed out", "could not launch",
+                    "not on path", "no response", "not installed")
 
 
 def _is_error(result: str) -> bool:
@@ -21,8 +26,17 @@ def _is_error(result: str) -> bool:
     return any(m in low for m in _ERR_MARKERS)
 
 
+def _is_unavailable(result: str) -> bool:
+    low = (result or "").lower()
+    return any(m in low for m in _UNAVAIL_MARKERS)
+
+
 def _all_errors(step_log) -> bool:
     return bool(step_log.tool_results) and all(_is_error(r) for r in step_log.tool_results)
+
+
+def _all_unavailable(step_log) -> bool:
+    return bool(step_log.tool_results) and all(_is_unavailable(r) for r in step_log.tool_results)
 
 
 class Supervisor:
@@ -49,13 +63,22 @@ class Supervisor:
                     "result. Stop looping - change the inputs, try a DIFFERENT tool, or if you've "
                     "already confirmed there's nothing there, move on and write_report with what you have.")
 
-        # STUCK: the tools in the last two steps all errored / were unavailable.
+        # STUCK: the tools in the last two steps are genuinely UNAVAILABLE here (missing
+        # binary/docker/network) - not merely a fixable argument error.
+        if _all_unavailable(last) and _all_unavailable(prev):
+            self.used += 1
+            return ("steer",
+                    "SUPERVISOR: the tools you're calling are not available in this environment. Do NOT "
+                    "retry them - switch to one that works (http_request, fuzz_paths, verify_finding, "
+                    "consult_knowledge) and note the tool gap in your report.")
+        # ARG ERROR: last two steps errored but the tools exist - the call is malformed. Tell the
+        # model to fix the ARGUMENTS and retry the SAME tool, not abandon it.
         if _all_errors(last) and _all_errors(prev):
             self.used += 1
             return ("steer",
-                    "SUPERVISOR: the tools you're calling keep failing or are unavailable here. Do NOT "
-                    "retry the same failing tool - switch to one that works (http_request, fuzz_paths, "
-                    "consult_knowledge) or a different approach, and note the tool gap in your report.")
+                    "SUPERVISOR: your last tool calls errored on their ARGUMENTS, not because the tool is "
+                    "missing. Read the error - it tells you exactly which arguments to pass (e.g. "
+                    "verify_finding needs url and point). Fix the arguments and call the SAME tool again.")
 
         # THRASH: three straight steps that ran tools but produced only errors.
         if len(log) >= 3 and all(_all_errors(s) for s in log[-3:]):

@@ -61,6 +61,28 @@ def test_swarm_is_alias_for_hivemind():
     assert orch.Swarm is orch.Hivemind
 
 
+def test_test_injection_deterministic_signal_counts_as_confirmed(monkeypatch):
+    # test_injection runs the verifier's own engine (_analyze); an error-based DB-error
+    # signal IS a confirmation, so a weak model that calls test_injection (but can't
+    # construct a precise verify_finding call) still yields a CONFIRMED finding.
+    class FakeLoop:
+        def __init__(self, **k):
+            self.on_event = k.get("on_event") or (lambda *a, **kw: None)
+            self.sys = k.get("system_prompt", "")
+
+        def run(self, task):
+            if "INJECTION specialist" in self.sys:
+                self.on_event("tool_result", {"name": "test_injection",
+                    "result": "likely-vulnerable:\n  [/item?id] SQLi: DB error on a single-quote payload (error-based)"})
+                return "tested the id param"
+            return "done"
+
+    monkeypatch.setattr(orch, "AgentLoop", FakeLoop)
+    bb = orch.Hivemind(on_event=lambda k, d: None, make_backend=lambda: object(), max_feedback=0).run("http://t", "x")
+    assert bb.counts()["confirmed"] >= 1
+    assert any("db error" in c["text"].lower() for c in bb.confirmed)
+
+
 def test_bounded_feedback_loop(monkeypatch):
     # an exploit specialist posts a gap once -> ONE focused recon round -> exploit again.
     state = {"gap_posted": False}
