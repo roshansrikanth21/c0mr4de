@@ -72,7 +72,7 @@ INJECTION = AgentProfile(
             "verify_finding (claim=sqli) before claiming it - a response code or an error string alone is not "
             "proof. For blind cases use oob_start/oob_poll. consult_knowledge for the DB/stack. Attach a PoC."),
     tool_names=["http_request", "crawl_site", "test_injection", "test_all_params", "verify_finding",
-                "oob_start", "oob_poll", "make_poc", *_CONSULT],
+                "oob_start", "oob_poll", "make_poc", "note_gap", *_CONSULT],
 )
 
 CLIENT_SIDE = AgentProfile(
@@ -82,7 +82,7 @@ CLIENT_SIDE = AgentProfile(
             "execution. For SSRF/blind use verify_finding (claim=ssrf) with oob_start. For redirects use "
             "claim=open_redirect. Never report what you did not confirm. Attach a PoC."),
     tool_names=["http_request", "test_injection", "browser_navigate", "browser_eval", "browser_storage",
-                "oob_start", "oob_poll", "verify_finding", "make_poc", *_CONSULT],
+                "oob_start", "oob_poll", "verify_finding", "make_poc", "note_gap", *_CONSULT],
 )
 
 ACCESS_CONTROL = AgentProfile(
@@ -91,7 +91,7 @@ ACCESS_CONTROL = AgentProfile(
             "the shared surface and the operator session. To CONFIRM an IDOR, use verify_finding (claim=idor) with "
             "a control request (the same endpoint with YOUR own id) AND the victim's unique marker - differing "
             "bodies alone are NOT proof. Attach a PoC. Report only confirmed cross-user access."),
-    tool_names=["http_request", "crawl_site", "verify_finding", "decode_jwt", "make_poc", *_CONSULT],
+    tool_names=["http_request", "crawl_site", "verify_finding", "decode_jwt", "make_poc", "note_gap", *_CONSULT],
 )
 
 AUTH = AgentProfile(
@@ -112,7 +112,7 @@ VALIDATOR = AgentProfile(
             "on the shared blackboard and, for each concrete one, reproduce it deterministically with "
             "verify_finding (build the request + the matching claim). Keep ONLY the ones it returns CONFIRMED, "
             "with their evidence. Explicitly discard every lead that does not confirm. Do not run new recon."),
-    tool_names=["verify_finding", "http_request", "decode_jwt", "tamper_jwt", "make_poc", *_CONSULT],
+    tool_names=["verify_finding", "http_request", "decode_jwt", "tamper_jwt", "make_poc", "note_gap", *_CONSULT],
 )
 
 # ---- REPORT phase (confirmed findings only) ----

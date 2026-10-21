@@ -28,6 +28,7 @@ class Blackboard:
     gaps: list[dict] = field(default_factory=list)         # {agent, text}       - "recon, dig here" feedback
     _seen: set = field(default_factory=set)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _gap_cursor: int = 0
 
     def _add(self, bucket: list, agent: str, text: str, cap: int = 1200) -> bool:
         text = (text or "").strip()
@@ -61,6 +62,19 @@ class Blackboard:
         with self._lock:
             return {"surface": len(self.surface), "leads": len(self.leads),
                     "confirmed": len(self.confirmed), "gaps": len(self.gaps)}
+
+    def new_gaps(self) -> list[dict]:
+        """Gaps posted since the last call. The coordinator uses this to run ONE
+        bounded focused-recon round per batch of gaps (no unbounded A<->B cycle)."""
+        with self._lock:
+            fresh = self.gaps[self._gap_cursor:]
+            self._gap_cursor = len(self.gaps)
+            return list(fresh)
+
+    @staticmethod
+    def gaps_brief(items: list[dict]) -> str:
+        return ("FOCUSED RECON REQUEST from the exploitation specialists - find these and add them to the "
+                "attack surface:\n" + "\n".join(f"  - {g['text']}" for g in items))
 
     def brief(self, max_chars: int = 2200) -> str:
         """A compact, structured briefing injected into the next specialist's task.

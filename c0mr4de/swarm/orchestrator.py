@@ -21,7 +21,7 @@ import yaml
 
 from c0mr4de.agent.backends import build_backend
 from c0mr4de.agent.loop import AgentLoop
-from c0mr4de.swarm.agents import PHASES
+from c0mr4de.swarm.agents import PHASES, RUNTIME_RECON
 from c0mr4de.swarm.blackboard import Blackboard
 
 _FINDING_MARKERS = ("BENCH{", "flag{", "FLAG{", "MIRAGE{", "premium unlocked",
@@ -51,12 +51,14 @@ def _active_backend_cfg() -> dict:
 
 
 class Hivemind:
-    def __init__(self, backend=None, max_steps: int = 14, on_event=None, should_stop=None, make_backend=None):
+    def __init__(self, backend=None, max_steps: int = 14, on_event=None, should_stop=None, make_backend=None,
+                 max_feedback: int = 1):
         self.backend = backend                 # kept for the "backend name" event; specialists get fresh ones
         self.max_steps = max_steps
         self.on_event = on_event or (lambda kind, data: None)
         self.should_stop = should_stop or (lambda: False)
         self._make_backend = make_backend      # test seam: () -> backend
+        self.max_feedback = max_feedback       # bounded exploit->recon feedback rounds (0 disables)
 
     def _new_backend(self):
         if self._make_backend:
@@ -77,30 +79,47 @@ class Hivemind:
 
     def run(self, target: str, objective: str) -> Blackboard:
         bb = Blackboard(target=target, objective=objective)
-        for group in PHASES:
-            if self.should_stop():
+        recon, exploit, validate, report = PHASES
+        self._phase(recon, bb, objective, target)
+        rounds = 0
+        while not self.should_stop():
+            self._phase(exploit, bb, objective, target)
+            fresh = bb.new_gaps()                 # gaps the exploit specialists fed back to recon
+            if not fresh or rounds >= self.max_feedback:
                 break
-            phase = group[0].phase if group else ""
-            parallel = min(len(group), self._concurrency()) > 1
-            self.on_event("phase", {"name": phase, "specialists": [p.name for p in group],
-                                    "parallel": parallel, "counts": bb.counts()})
-            self._run_phase(group, bb, objective, target)
+            rounds += 1
+            self.on_event("feedback", {"round": rounds, "gaps": [g["text"] for g in fresh]})
+            # Bounded bidirectional flow: an exploit specialist's gap becomes recon's input, and
+            # the new surface becomes exploitation's input again - capped at max_feedback rounds,
+            # so there is no unbounded A<->B cycle.
+            self._phase([RUNTIME_RECON], bb, objective, target, extra=bb.gaps_brief(fresh))
+        if not self.should_stop():
+            self._phase(validate, bb, objective, target)
+            self._phase(report, bb, objective, target)
         return bb
 
-    def _run_phase(self, group, bb, objective, target) -> None:
+    def _phase(self, group, bb, objective, target, extra: str = "") -> None:
+        if not group or self.should_stop():
+            return
+        parallel = min(len(group), self._concurrency()) > 1
+        self.on_event("phase", {"name": group[0].phase, "specialists": [p.name for p in group],
+                                "parallel": parallel, "counts": bb.counts()})
+        self._run_phase(group, bb, objective, target, extra)
+
+    def _run_phase(self, group, bb, objective, target, extra: str = "") -> None:
         workers = min(len(group), self._concurrency())
         if workers <= 1:
             for p in group:                       # local backend: sequential (avoid thrashing one model)
                 if self.should_stop():
                     break
-                self._run_specialist(p, bb, objective, target)
+                self._run_specialist(p, bb, objective, target, extra)
             return
         with ThreadPoolExecutor(max_workers=workers) as ex:   # hosted backend: real parallelism
-            futs = [ex.submit(self._run_specialist, p, bb, objective, target) for p in group]
+            futs = [ex.submit(self._run_specialist, p, bb, objective, target, extra) for p in group]
             for f in futs:
                 f.result()   # surface exceptions; each specialist already guards its own tools
 
-    def _run_specialist(self, profile, bb, objective, target) -> None:
+    def _run_specialist(self, profile, bb, objective, target, extra: str = "") -> None:
         if self.should_stop():
             return
         self.on_event("agent_start", {"agent": profile.name, "domain": profile.domain})
@@ -113,6 +132,8 @@ class Hivemind:
 
         task = (f"{objective}\n\nTarget: {target}\n\n"
                 f"--- shared hivemind memory (structured; do not duplicate work) ---\n{bb.brief()}")
+        if extra:
+            task += f"\n\n{extra}"
         try:
             loop = AgentLoop(backend=self._new_backend(), tools=profile.registry(), max_steps=self.max_steps,
                              verbose=False, on_event=on_ev, should_stop=self.should_stop,
@@ -140,6 +161,8 @@ class Hivemind:
                 posted_confirm = True   # a tool confirmation exists; don't also post the prose summary
             elif name == "verify_finding" and ("[unconfirmed]" in low or "[inconclusive]" in low):
                 bb.lead(profile.name, result.splitlines()[0][:220])
+            elif name == "note_gap" and "gap noted" in low:           # feedback to recon
+                bb.gap(profile.name, result.split(":", 1)[-1].strip()[:220])
             elif name in ("test_injection", "test_all_params") and "likely-vulnerable" in low:
                 bb.lead(profile.name, result[:300])
             elif _looks_like_finding(result):

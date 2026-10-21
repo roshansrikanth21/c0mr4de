@@ -59,3 +59,75 @@ def test_hivemind_phases_parallelism_and_verifier_gate(monkeypatch):
 
 def test_swarm_is_alias_for_hivemind():
     assert orch.Swarm is orch.Hivemind
+
+
+def test_bounded_feedback_loop(monkeypatch):
+    # an exploit specialist posts a gap once -> ONE focused recon round -> exploit again.
+    state = {"gap_posted": False}
+
+    class FakeLoop:
+        def __init__(self, **k):
+            self.on_event = k.get("on_event") or (lambda *a, **kw: None)
+            self.sys = k.get("system_prompt", "")
+
+        def run(self, task):
+            if "INJECTION specialist" in self.sys and not state["gap_posted"]:
+                state["gap_posted"] = True
+                self.on_event("tool_result", {"name": "note_gap",
+                                              "result": "GAP NOTED (recon requested): enumerate /admin endpoints"})
+                return "blocked - need recon on admin"
+            return "done"
+
+    monkeypatch.setattr(orch, "AgentLoop", FakeLoop)
+    events = []
+    hm = orch.Hivemind(on_event=lambda k, d: events.append((k, d)), make_backend=lambda: object(), max_feedback=1)
+    hm.run("http://t", "pwn it")
+    feedback = [d for k, d in events if k == "feedback"]
+    assert len(feedback) == 1 and "admin" in feedback[0]["gaps"][0]           # the gap fed recon
+    recon_starts = [d for k, d in events if k == "agent_start" and d["agent"] == "runtime-recon"]
+    assert len(recon_starts) == 2                                             # initial + one feedback round (bounded)
+
+
+def test_feedback_disabled_with_max_feedback_zero(monkeypatch):
+    class GapLoop:
+        def __init__(self, **k):
+            self.on_event = k.get("on_event") or (lambda *a, **kw: None)
+            self.sys = k.get("system_prompt", "")
+
+        def run(self, task):
+            if "INJECTION specialist" in self.sys:
+                self.on_event("tool_result", {"name": "note_gap", "result": "GAP NOTED (recon requested): x"})
+            return "done"
+
+    monkeypatch.setattr(orch, "AgentLoop", GapLoop)
+    events = []
+    orch.Hivemind(on_event=lambda k, d: events.append((k, d)), make_backend=lambda: object(),
+                  max_feedback=0).run("http://t", "x")
+    assert not any(k == "feedback" for k, d in events)                       # no feedback round when disabled
+
+
+def test_specialists_run_in_parallel(monkeypatch):
+    import time
+
+    import c0mr4de.swarm.agents as agmod
+    from c0mr4de.tools.base import ToolRegistry
+    # isolate the parallelism measurement from per-specialist registry-build overhead
+    monkeypatch.setattr(agmod, "build_default_registry", lambda *a, **k: ToolRegistry())
+
+    class SleepLoop:
+        def __init__(self, **k):
+            self.on_event = k.get("on_event") or (lambda *a, **kw: None)
+
+        def run(self, task):
+            time.sleep(0.4)
+            return "done"
+
+    monkeypatch.setattr(orch, "AgentLoop", SleepLoop)
+    hm = orch.Hivemind(on_event=lambda k, d: None, make_backend=lambda: object(), max_feedback=0)
+    t = time.time()
+    hm.run("http://t", "x")
+    dt = time.time() - t
+    # 8 specialists x 0.4s = 3.2s if sequential. recon (2) and exploit (4) run in parallel, so the
+    # total collapses toward ~1.6s (recon .4 + exploit .4 + validate .4 + report .4). Under 2.5s
+    # proves the phases genuinely fan out rather than running one specialist at a time.
+    assert dt < 2.5
