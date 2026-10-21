@@ -34,6 +34,27 @@
 #     type: anthropic
 #     model: claude-sonnet-5
 #     # api_key via ANTHROPIC_API_KEY env var
+#
+#   # --- Hosted free/cheap "good knowledge base" models (GLM, DeepSeek, ...) ---
+#   # All OpenAI-compatible, so they slot straight into type: openai_compatible.
+#   # These give the hivemind REAL parallelism (a single local model serializes;
+#   # a hosted API runs specialists concurrently). Verify current free models +
+#   # limits on each provider - they change.
+#   glm-flash:                 # Z.ai GLM-4.5-Flash / 4.7-Flash are free (rate-limited)
+#     type: openai_compatible
+#     model: glm-4.5-flash
+#     base_url: https://api.z.ai/api/paas/v4
+#     api_key: ...             # free Z.ai key
+#   deepseek:                  # cheap, strong; not free
+#     type: openai_compatible
+#     model: deepseek-chat
+#     base_url: https://api.deepseek.com
+#     api_key: ...
+#   openrouter-glm:            # OpenRouter aggregates many (some free) models
+#     type: openai_compatible
+#     model: z-ai/glm-4.6
+#     base_url: https://openrouter.ai/api/v1
+#     api_key: ...
 
 backend:
   # --- Option 1: free, local, unlimited tokens, slower/weaker reasoning ---

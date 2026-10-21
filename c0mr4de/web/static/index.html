@@ -367,7 +367,7 @@
 
     <div id="composer"><div class="wrap">
       <div class="ctrls">
-        <span class="modes"><button class="mode on" data-mode="agent">agent</button><button class="mode" data-mode="swarm">swarm</button></span>
+        <span class="modes"><button class="mode on" data-mode="agent">agent</button><button class="mode" data-mode="hivemind">hivemind</button></span>
         <select class="selctrl" id="rolePick" title="Role - scopes which tools and methodology this session uses"></select>
         <select class="selctrl" id="modelPick" title="Model - active backend; applies to the next run"></select>
         <button class="ghost" id="rescanBtn" title="Rescan this device for installed models"><svg class="ic" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
@@ -821,11 +821,19 @@ async function openChat(id){
 let live=false;
 function renderEvent(kind,data){
   const ag=data.agent?`<span style="color:var(--faint)">[${esc(data.agent)}]</span> `:'';
-  if(kind==='agent_start'){flushSteps();const roles={recon:'mapping the attack surface',exploit:'exploiting & chaining',report:'writing the report'};
-    add('phase',`${esc(data.agent)} specialist<span class="sub">${roles[data.agent]||''}</span>`);
-    if(live){actPhase.textContent=data.agent;setActivity((roles[data.agent]||data.agent));}
+  if(kind==='phase'){flushSteps();
+    const names=(data.specialists||[]).join(', ');
+    const par=(data.specialists||[]).length>1?' (parallel)':'';
+    add('phase',`phase: ${esc(data.name)}${par}<span class="sub">${esc(names)}</span>`);
+    if(live){actPhase.textContent=data.name;setActivity('phase: '+data.name+par);}
     return;}
-  if(kind==='agent_done')return;
+  if(kind==='agent_start'){flushSteps();
+    add('phase',`${esc(data.agent)}<span class="sub">${esc(data.domain||'specialist')}</span>`);
+    if(live){actPhase.textContent=data.agent;setActivity(data.domain||data.agent);}
+    return;}
+  if(kind==='agent_done'){
+    if(data.counts){const c=data.counts;stTools.title=`confirmed ${c.confirmed} · leads ${c.leads} · surface ${c.surface}`;}
+    return;}
   if(kind==='thought'){
     stepBuf.push({think:true,count:1,html:`<div class="think"><span class="p">[reasoning]</span> ${ag}${md(data.text)}</div>`});
     if(live)setActivity('Reasoning');
@@ -880,7 +888,7 @@ let currentES=null, running=false, runMode='agent';
 document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.mode').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); runMode=b.dataset.mode; stMode.textContent=runMode;
-  taskEl.placeholder = runMode==='swarm' ? 'target for the swarm: recon, exploit, report' : 'pentest http://localhost:3000, chain vulns, write a report';
+  taskEl.placeholder = runMode==='hivemind' ? 'target for the hivemind: recon + source, exploit specialists, verify, report' : 'pentest http://localhost:3000, chain vulns, write a report';
 });
 const gov=document.getElementById('gov'), gframe=document.getElementById('gframe');
 document.getElementById('gclose').onclick=()=>{gov.classList.remove('on');gframe.src='about:blank';};

@@ -301,11 +301,14 @@ def run(task: str, chat_id: str = "", mode: str = "agent"):
             doc = chats.get_chat(chat_id) if chat_id else None
             role = (doc or {}).get("role", "general")
             events.put({"kind": "role", "data": {"name": role, "label": roles.get_role(role)["label"]}})
-            if mode == "swarm":
-                from c0mr4de.swarm.orchestrator import Swarm
-                bb = Swarm(backend=backend, on_event=on_event, should_stop=cancel.is_set).run(
+            if mode in ("hivemind", "swarm"):
+                from c0mr4de.swarm.orchestrator import Hivemind
+                bb = Hivemind(on_event=on_event, should_stop=cancel.is_set).run(
                     _extract_target(task), task)
-                result = f"Swarm complete - {len(bb.findings)} finding(s) across recon/exploit/report."
+                c = bb.counts()
+                result = (f"Hivemind complete - {c['confirmed']} CONFIRMED finding(s), "
+                          f"{c['leads']} unverified lead(s), {c['surface']} surface item(s). "
+                          f"Only confirmed findings were written to the report.")
                 events.put({"kind": "final", "data": {"text": result}})
             else:
                 recap = chats.prior_context(chat_id) if chat_id else ""
