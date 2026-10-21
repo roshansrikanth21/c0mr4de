@@ -93,22 +93,36 @@ def parse_http_request(raw: str, base_scheme: str = "https") -> dict:
     first = lines[0].split()
     if len(first) < 2:
         raise ValueError("first line must be: METHOD PATH [HTTP/1.1]")
+    import re
     method, target = first[0].upper(), first[1]
     headers: dict[str, str] = {}
+    pseudo: dict[str, str] = {}   # HTTP/2 :authority / :path / :scheme (Burp's default copy)
+    header_re = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+:")  # RFC token followed by a colon
     i = 1
-    while i < len(lines) and lines[i].strip():
-        if ":" in lines[i]:
-            k, _, v = lines[i].partition(":")
-            headers[k.strip()] = v.strip()
+    while i < len(lines):
+        ln = lines[i]
+        if ln.strip() == "":                         # blank line: headers end, body follows
+            i += 1
+            break
+        if ln.startswith(":"):                        # HTTP/2 pseudo-header, e.g. ":authority: host"
+            name, _, val = ln[1:].partition(":")
+            pseudo[name.strip().lower()] = val.strip()
+            i += 1
+            continue
+        if not header_re.match(ln):                   # not a well-formed header -> body starts here
+            break                                     # (handles a request with no blank line before the body)
+        k, _, v = ln.partition(":")
+        headers[k.strip()] = v.strip()
         i += 1
-    body = "\n".join(lines[i + 1:]).strip("\n") if i + 1 <= len(lines) else ""
+    body = "\n".join(lines[i:]).strip("\n")
     if target.startswith(("http://", "https://")):
         url = target
     else:
-        host = headers.get("Host") or headers.get("host")
+        host = headers.get("Host") or headers.get("host") or pseudo.get("authority")
         if not host:
-            raise ValueError("relative path but no Host header - cannot build a URL")
-        url = f"{base_scheme}://{host}{target}"
+            raise ValueError("relative path but no Host header (or :authority) - cannot build a URL")
+        path = target if target not in ("", "*") else pseudo.get("path", "/")
+        url = f"{base_scheme}://{host}{path}"
     return {"method": method, "url": url, "headers": headers, "body": body}
 
 
@@ -181,6 +195,8 @@ def _builder(request: dict, kind: str, name: str, requester=_request):
 
     if kind == "json":
         obj = json.loads(body)
+        if not isinstance(obj, dict):
+            raise ValueError("request body is not a JSON object - cannot target a json param")
         orig = obj.get(name, "")
 
         def raw_send(val, _obj=obj):
@@ -248,6 +264,14 @@ def _verify_injection(request: dict, point: str, claim: str) -> Verdict:
         rb = raw_send(orig)
     except httpx.HTTPError as exc:
         return Verdict("ERROR", claim, detail=f"baseline request failed: {exc}")
+    # A 404/410 baseline means the request target does not exist; testing it risks a
+    # phantom signal (latency jitter on a dead page) - exactly the false "CONFIRMED"
+    # webrecon's own crawler guards against. Refuse to confirm anything here.
+    if rb.status_code in (404, 410):
+        return Verdict("UNCONFIRMED", claim,
+                       evidence=[f"baseline endpoint returned HTTP {rb.status_code}"],
+                       detail=f"The request target returned HTTP {rb.status_code} (does not exist), so no "
+                              f"signal can be confirmed here - length or timing variation is not evidence.")
     base_body, base_len = rb.text, len(rb.text)
     ctype = rb.headers.get("content-type", "")
     notes = _analyze(send, base_body, base_len, orig, exec_url=exec_url, content_type=ctype)
@@ -257,6 +281,7 @@ def _verify_injection(request: dict, point: str, claim: str) -> Verdict:
     hit = (want in confirmed) if want else bool(confirmed)
     confirming = [n for n in notes if _confirmed_class(n) and (not want or _confirmed_class(n) == want)]
     leads = [n for n in notes if not _confirmed_class(n)]
+    other = [n for n in notes if _confirmed_class(n) and want and _confirmed_class(n) != want]
 
     if hit:
         cls = want or next(iter(confirmed))
@@ -269,7 +294,9 @@ def _verify_injection(request: dict, point: str, claim: str) -> Verdict:
         )
     detail = (f"No deterministic {claim} signal at {kind} param '{name}'."
               if want else f"No deterministic SQLi/XSS signal at {kind} param '{name}'.")
-    return Verdict("UNCONFIRMED", claim, evidence=leads, detail=detail)
+    if other:   # claimed sqli but XSS (or vice-versa) WAS confirmed - do not silently drop it
+        detail += " NOTE: a DIFFERENT vuln class was confirmed here: " + "; ".join(other)
+    return Verdict("UNCONFIRMED", claim, evidence=leads + other, detail=detail)
 
 
 def _repro_for(request: dict, kind: str, name: str, payload: str) -> str:
@@ -289,8 +316,10 @@ def _repro_for(request: dict, kind: str, name: str, payload: str) -> str:
                      urllib.parse.urlencode(q, doseq=True))
     if kind == "json":
         obj = json.loads(body)
-        obj[name] = payload
-        return _curl(method, url, {**headers, "Content-Type": "application/json"}, json.dumps(obj))
+        if isinstance(obj, dict):
+            obj[name] = payload
+            return _curl(method, url, {**headers, "Content-Type": "application/json"}, json.dumps(obj))
+        return _curl(method, url, headers, body)
     hdrs = dict(headers)
     hdrs[name] = payload
     return _curl(method, url, hdrs, body)
@@ -319,19 +348,29 @@ def _verify_open_redirect(request: dict, point: str) -> Verdict:
             r = raw_send(pl)
         except (httpx.HTTPError, PermissionError):
             continue
+        # Require an ACTUAL redirect status - a merely reflected Location on a 200 is not
+        # a redirect. Then resolve Location against the request URL the way a browser does,
+        # so a scheme-less relative path ("/dash") is correctly seen as on-host, not coerced
+        # into a phantom external host.
+        if not (300 <= r.status_code < 400):
+            continue
         loc = r.headers.get("location", "")
-        if loc and urllib.parse.urlparse(loc if "//" in loc else "//" + loc).hostname == sentinel:
+        if not loc:
+            continue
+        resolved = urllib.parse.urljoin(request["url"], loc)
+        if urllib.parse.urlparse(resolved).hostname == sentinel:
             return Verdict(
                 "CONFIRMED", "open_redirect", technique="external Location redirect",
                 evidence=[f"payload {pl!r} -> HTTP {r.status_code}, Location: {loc}",
-                          f"the server redirected to the attacker-controlled host '{sentinel}'"],
+                          f"resolves to the attacker-controlled host '{sentinel}' ({resolved})"],
                 reproduction=_repro_for(request, kind, name, payloads[0]),
                 detail=f"Confirmed open redirect at {kind} param '{name}'.")
     return Verdict("UNCONFIRMED", "open_redirect",
-                   detail=f"No external redirect from {kind} param '{name}' (Location stayed on-host or absent).")
+                   detail=f"No off-host 3xx redirect from {kind} param '{name}' "
+                          f"(Location stayed on-host, was absent, or the status was not a redirect).")
 
 
-def _verify_oob(request: dict, point: str, kind_claim: str = "ssrf", wait: float = 12.0) -> Verdict:
+def _verify_oob(request: dict, point: str, kind_claim: str = "ssrf", wait: float = 20.0) -> Verdict:
     """Blind SSRF/RCE/XXE via a real interactsh callback. CONFIRMED only if the
     target's server calls back to our unique OOB domain after we inject it."""
     from c0mr4de.tools import oob
@@ -368,62 +407,107 @@ def _verify_oob(request: dict, point: str, kind_claim: str = "ssrf", wait: float
 
 
 def _record_like(status: int, body: str) -> bool:
-    """A 2xx response that looks like actual data, not a login/error/empty page."""
+    """A 2xx response that looks like actual object data, not a login/error/empty
+    page. For JSON, requires a non-empty payload (so {}, [], null, "" do not count)."""
     if not (200 <= status < 300):
         return False
-    low = (body or "").lower()
+    body = body or ""
     if len(body) < 8:
         return False
+    low = body.lower()
     deny = ("sign in", "log in", "login", "unauthorized", "access denied", "forbidden",
             "not found", "error", "please authenticate")
-    return not any(d in low for d in deny)
+    if any(d in low for d in deny):
+        return False
+    stripped = body.strip()
+    if stripped[:1] in ("{", "["):   # JSON must actually carry data
+        try:
+            if not json.loads(stripped):   # {}, [], 0, "", null -> no record
+                return False
+        except Exception:  # noqa: BLE001
+            pass
+    return True
 
 
-def _verify_access_control(request: dict, control_request: dict | None) -> Verdict:
-    """IDOR / BOLA. A true confirmation needs TWO requests under YOUR session:
-    one for your own object (control) and one for another user's object (target).
-    CONFIRMED only if both return record-like 2xx bodies that materially DIFFER -
-    i.e. changing the id fetched a different record you should not reach. Without
-    the control request it stays INCONCLUSIVE, because a lone 200 cannot prove the
-    object is not your own."""
+def _verify_access_control(request: dict, control_request: dict | None, victim_marker: str = "") -> Verdict:
+    """IDOR / BOLA. 'Two different 200s' is NEVER proof on its own: volatile content
+    (timestamps, CSRF tokens, view counters) or simply a second object of your own
+    makes bodies differ. A real confirmation needs POSITIVE evidence that you reached
+    ANOTHER user's data:
+      - victim_marker: the victim's own datum (email/id/username) that MUST appear in
+        the TARGET body and MUST NOT appear in your own CONTROL body, or
+      - (weaker) differing record-like bodies, reported as a LEAD (INCONCLUSIVE), never
+        as CONFIRMED.
+    """
     try:
         tr = _request(request["url"], request["method"], _fwd_headers(request["headers"]), request["body"])
     except (httpx.HTTPError, PermissionError) as exc:
         return Verdict("ERROR", "idor", detail=f"target request failed: {exc}")
     if not _record_like(tr.status_code, tr.text):
         return Verdict("UNCONFIRMED", "idor", technique="object access",
-                       evidence=[f"target returned HTTP {tr.status_code}, {len(tr.text)} bytes "
-                                 f"(not a record-like success)"],
-                       detail="The targeted object was not accessible, so there is no IDOR to confirm.")
-    if control_request is None:
-        return Verdict(
-            "INCONCLUSIVE", "idor", technique="object access",
-            evidence=[f"target object returned HTTP {tr.status_code}, {len(tr.text)} bytes (record-like)"],
-            detail="The object is accessible under this session, but a lone 200 cannot prove it is another "
-                   "user's object rather than your own. Provide a control request (the SAME endpoint with "
-                   "YOUR own id) so I can confirm the ids return DIFFERENT records.")
-    try:
-        cr = _request(control_request["url"], control_request["method"],
-                      _fwd_headers(control_request["headers"]), control_request["body"])
-    except (httpx.HTTPError, PermissionError) as exc:
-        return Verdict("ERROR", "idor", detail=f"control request failed: {exc}")
+                       evidence=[f"target returned HTTP {tr.status_code}, {len(tr.text)} bytes (not record-like data)"],
+                       detail="The targeted object was not accessible (error / empty / denied), so there is no IDOR to confirm.")
+    cr = None
+    if control_request is not None:
+        try:
+            cr = _request(control_request["url"], control_request["method"],
+                          _fwd_headers(control_request["headers"]), control_request["body"])
+        except (httpx.HTTPError, PermissionError) as exc:
+            return Verdict("ERROR", "idor", detail=f"control request failed: {exc}")
+
+    repro = _curl(request["method"], request["url"], request["headers"], request["body"])
+
+    # STRONGEST signal: the victim's own identifying datum comes back to your session.
+    if victim_marker:
+        in_target = victim_marker in tr.text
+        if cr is not None:
+            if in_target and victim_marker not in cr.text:
+                return Verdict("CONFIRMED", "idor", technique="victim-marker differential",
+                               evidence=[f"victim marker {victim_marker!r} is PRESENT in the target response "
+                                         f"(HTTP {tr.status_code}) and ABSENT from your own control response",
+                                         "your session read data belonging to the other user"],
+                               reproduction=repro,
+                               detail="Confirmed IDOR/BOLA: the victim's own identifying data is returned to your session.")
+            if in_target:
+                return Verdict("INCONCLUSIVE", "idor",
+                               evidence=[f"marker {victim_marker!r} appears in BOTH target and control"],
+                               detail="The marker is not discriminating (it is in your own response too). "
+                                      "Choose a marker unique to the victim's object.")
+            return Verdict("UNCONFIRMED", "idor",
+                           evidence=[f"marker {victim_marker!r} not found in the target response"],
+                           detail="Your session did not receive the victim's identifying data - no cross-user access shown.")
+        if in_target:
+            return Verdict("CONFIRMED", "idor", technique="victim-marker present",
+                           evidence=[f"victim marker {victim_marker!r} is present in the target response under your session"],
+                           reproduction=repro,
+                           detail="Confirmed IDOR/BOLA: the victim's identifying data is returned to your session. "
+                                  "(Add a control request to also show it is absent from your own object.)")
+        return Verdict("UNCONFIRMED", "idor",
+                       evidence=[f"marker {victim_marker!r} not found in the target response"],
+                       detail="The victim marker was not returned, so no cross-user access is shown.")
+
+    # No marker: a differential is only a LEAD, never a confirmation.
+    if cr is None:
+        return Verdict("INCONCLUSIVE", "idor", technique="object access",
+                       evidence=[f"target object returned HTTP {tr.status_code}, {len(tr.text)} bytes (record-like)"],
+                       detail="The object is accessible under your session, but a lone 200 cannot prove it is another "
+                              "user's object rather than your own. Provide a victim_marker (the victim's email/id that "
+                              "should appear only in their record) and/or a control request to confirm.")
     if not _record_like(cr.status_code, cr.text):
         return Verdict("INCONCLUSIVE", "idor",
                        evidence=[f"control returned HTTP {cr.status_code} (not record-like)"],
-                       detail="Control (your own object) did not return a record, so the differential is "
-                              "inconclusive. Check the control request.")
+                       detail="Control (your own object) did not return a record, so the differential is inconclusive.")
     if tr.text == cr.text:
         return Verdict("UNCONFIRMED", "idor", technique="object differential",
                        evidence=["target and control returned IDENTICAL bodies"],
-                       detail="Both ids returned the same record - the target is likely your own object "
-                              "(or a shared/empty resource), not an IDOR.")
-    return Verdict(
-        "CONFIRMED", "idor", technique="cross-object differential",
-        evidence=[f"your object: HTTP {cr.status_code}, {len(cr.text)} bytes",
-                  f"other object: HTTP {tr.status_code}, {len(tr.text)} bytes",
-                  "both are record-like and the bodies DIFFER - changing the id returned a different record"],
-        reproduction=_curl(request["method"], request["url"], request["headers"], request["body"]),
-        detail="Confirmed IDOR/BOLA: your session can read another object's record by changing the id.")
+                       detail="Both ids returned the same record - likely your own object or a shared resource, not an IDOR.")
+    return Verdict("INCONCLUSIVE", "idor", technique="object differential",
+                   evidence=[f"your object: HTTP {cr.status_code}, {len(cr.text)} bytes",
+                             f"other object: HTTP {tr.status_code}, {len(tr.text)} bytes",
+                             "bodies DIFFER, but differing is necessary-not-sufficient for cross-user access "
+                             "(volatile fields or a second object of your own also differ)"],
+                   detail="Accessible and different from your own object - a LEAD worth manual review, NOT confirmed. "
+                          "Supply a victim_marker (the victim's unique datum) to turn this into a confirmation.")
 
 
 def _find_jwt(request: dict) -> str | None:
@@ -456,12 +540,21 @@ def _verify_jwt(request: dict, field_name: str, value: str) -> Verdict:
     if not token:
         return Verdict("ERROR", "jwt", detail="no JWT found in Authorization header or Cookie.")
 
-    def status_of(req: dict) -> int:
-        r = _request(req["url"], req["method"], _fwd_headers(req["headers"]), req["body"])
-        return r.status_code
+    def probe(req: dict):
+        """Single no-follow request -> (status, body). No-follow is essential: a
+        server that rejects a bad token with a 302 to /login must read as REJECTED,
+        not as the 200 the login page would give if we followed the redirect."""
+        from c0mr4de import scope
+        url = req["url"]
+        if scope.check(url) == "out":
+            raise PermissionError(f"{url} is OUT OF SCOPE")
+        hdrs, _ = _scope_auth(url, _fwd_headers(req["headers"]))
+        r = httpx.request(req["method"].upper(), url, headers=hdrs, content=req["body"] or None,
+                          timeout=20, follow_redirects=False)
+        return r.status_code, r.text
 
     try:
-        orig_status = status_of(request)
+        orig_status, _ = probe(request)
     except (httpx.HTTPError, PermissionError) as exc:
         return Verdict("ERROR", "jwt", detail=f"baseline request failed: {exc}")
     if not (200 <= orig_status < 300):
@@ -469,27 +562,35 @@ def _verify_jwt(request: dict, field_name: str, value: str) -> Verdict:
                        evidence=[f"original token gave HTTP {orig_status}"],
                        detail="The original token was not accepted (non-2xx), so there is no authenticated "
                               "baseline to test signature verification against.")
-    # corrupted signature: flip the signature segment
     parts = token.split(".")
     corrupt = f"{parts[0]}.{parts[1]}.{'A' * max(10, len(parts[2]) if len(parts) > 2 else 16)}"
-    corrupt_status = status_of(_replace_token(request, token, corrupt))
-    # tampered payload, original signature kept
     tampered_out = tamper_jwt(token, field_name, value)
     if tampered_out.startswith("ERROR"):
         return Verdict("ERROR", "jwt", detail=tampered_out)
-    tampered = tampered_out.split("\n")[1].strip() if "\n" in tampered_out else ""
     import re
     m = re.search(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+", tampered_out)
-    tampered = m.group(0) if m else tampered
-    tampered_status = status_of(_replace_token(request, token, tampered))
+    if not m:
+        return Verdict("ERROR", "jwt", detail="could not extract the tampered token from tamper_jwt output.")
+    tampered = m.group(0)
+    try:
+        corrupt_status, _ = probe(_replace_token(request, token, corrupt))
+        tampered_status, tampered_body = probe(_replace_token(request, token, tampered))
+    except (httpx.HTTPError, PermissionError) as exc:
+        return Verdict("ERROR", "jwt", detail=f"replay request failed: {exc}")
 
-    accepted = lambda s: 200 <= s < 300
-    if not accepted(corrupt_status) and accepted(tampered_status):
+    def accepted(s):
+        return 200 <= s < 300
+    # CONFIRMED needs: corrupt-sig REJECTED (proves the server checks sigs) AND the
+    # tampered-payload token ACCEPTED with a REAL authenticated body (record-like, not a
+    # 200 login/error page). no-follow makes a 302-to-login read as rejected.
+    if (not accepted(corrupt_status) and accepted(tampered_status)
+            and _record_like(tampered_status, tampered_body)):
         return Verdict(
             "CONFIRMED", "jwt", technique="signature not verified",
             evidence=[f"original token: HTTP {orig_status} (accepted)",
                       f"corrupted-signature token: HTTP {corrupt_status} (rejected - server does check the sig)",
-                      f"tampered payload ({field_name}={value}) with ORIGINAL signature: HTTP {tampered_status} (accepted)"],
+                      f"tampered payload ({field_name}={value}), original signature: HTTP {tampered_status}, "
+                      f"real authenticated body (accepted)"],
             reproduction=_curl(request["method"], request["url"],
                                _replace_token(request, token, tampered)["headers"], request["body"]),
             detail="Confirmed: the server accepts a token whose payload was changed but whose signature was "
@@ -498,19 +599,18 @@ def _verify_jwt(request: dict, field_name: str, value: str) -> Verdict:
         return Verdict("INCONCLUSIVE", "jwt",
                        evidence=[f"corrupted-signature token was also accepted (HTTP {corrupt_status})"],
                        detail="The endpoint accepts even a garbage signature, so it likely does not validate the "
-                              "token at all (a different, possibly worse issue) rather than a payload-binding flaw. "
-                              "Test the endpoint's auth directly.")
+                              "token at all (a different, possibly worse issue) rather than a payload-binding flaw.")
     return Verdict("UNCONFIRMED", "jwt", technique="signature verification",
-                   evidence=[f"tampered-payload token was rejected (HTTP {tampered_status})"],
-                   detail="The server rejected the token after its payload was changed - the signature IS verified. "
-                          "No JWT tampering flaw on this field.")
+                   evidence=[f"tampered-payload token was rejected or not served real content (HTTP {tampered_status})"],
+                   detail="The server did not accept the token after its payload was changed - the signature IS "
+                          "verified (or it answered with a redirect/login). No JWT tampering flaw on this field.")
 
 
 # --- dispatcher -------------------------------------------------------------
 
 
 def verify(claim: str, request: dict, point: str = "", control_request: dict | None = None,
-           field_name: str = "", value: str = "") -> Verdict:
+           field_name: str = "", value: str = "", victim_marker: str = "") -> Verdict:
     """Route a claim to its deterministic verifier."""
     claim = (claim or "auto").lower()
     if claim not in CLAIMS:
@@ -529,7 +629,7 @@ def verify(claim: str, request: dict, point: str = "", control_request: dict | N
                 return Verdict("ERROR", claim, detail="ssrf needs the injection point (the URL/host param).")
             return _verify_oob(request, point, "ssrf")
         if claim == "idor":
-            return _verify_access_control(request, control_request)
+            return _verify_access_control(request, control_request, victim_marker)
         if claim == "jwt":
             if not field_name:
                 return Verdict("ERROR", claim, detail="jwt needs field_name (and value) to tamper, e.g. role=admin.")
@@ -538,4 +638,8 @@ def verify(claim: str, request: dict, point: str = "", control_request: dict | N
         return Verdict("ERROR", claim, detail=str(exc))
     except PermissionError as exc:
         return Verdict("ERROR", claim, detail=f"blocked by scope: {exc}")
+    except httpx.HTTPError as exc:
+        return Verdict("ERROR", claim, detail=f"request failed: {exc}")
+    except Exception as exc:  # noqa: BLE001 - a verifier must never crash the tool; degrade to ERROR
+        return Verdict("ERROR", claim, detail=f"verifier error: {exc}")
     return Verdict("ERROR", claim, detail="no verifier matched")

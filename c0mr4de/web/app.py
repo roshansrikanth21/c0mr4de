@@ -392,7 +392,8 @@ def verify_route(payload: dict = Body(...)):
     except ValueError as exc:
         return {"error": f"could not parse the request: {exc}"}
     vd = verify(payload.get("claim") or "auto", req, point=payload.get("point") or "",
-                control_request=ctrl, field_name=payload.get("field") or "", value=payload.get("value") or "")
+                control_request=ctrl, field_name=payload.get("field") or "", value=payload.get("value") or "",
+                victim_marker=payload.get("victim_marker") or "")
     return vd.to_dict()
 
 

@@ -442,8 +442,9 @@
         </select>
         <input id="vPoint" class="vin" placeholder="injection point, e.g. id or header:X-Forwarded-For" />
       </div>
-      <div class="vrow" id="vIdorRow" style="display:none">
-        <textarea id="vControl" rows="4" placeholder="idor: the SAME request with YOUR OWN id (control, to prove cross-account access)"></textarea>
+      <div class="vrow" id="vIdorRow" style="display:none;flex-direction:column;gap:8px">
+        <input id="vMarker" class="vin" placeholder="victim marker: the victim's unique datum (email/id) that should appear ONLY in their record - required to CONFIRM" />
+        <textarea id="vControl" rows="4" placeholder="control: the SAME request with YOUR OWN id (recommended - proves the marker is absent from your own data)"></textarea>
       </div>
       <div class="vrow" id="vJwtRow" style="display:none">
         <input id="vField" class="vin" placeholder="jwt field to tamper, e.g. role" />
@@ -899,6 +900,7 @@ document.getElementById('vRun').onclick=async()=>{
   const payload={claim:document.getElementById('vClaim').value,
     point:document.getElementById('vPoint').value.trim(),
     control_request:document.getElementById('vControl').value.trim(),
+    victim_marker:document.getElementById('vMarker').value.trim(),
     field:document.getElementById('vField').value.trim(),
     value:document.getElementById('vValue').value.trim()};
   if(/^https?:\/\//i.test(raw) && raw.split('\n').length===1){payload.url=raw;} else {payload.request=raw;}

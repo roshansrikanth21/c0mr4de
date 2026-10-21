@@ -16,7 +16,7 @@ from c0mr4de.verifier import CLAIMS, parse_http_request, verify
 
 def verify_finding(claim: str = "auto", request: str = "", url: str = "", method: str = "GET",
                    headers: str = "{}", body: str = "", point: str = "", control_request: str = "",
-                   field: str = "", value: str = "", base_scheme: str = "https") -> str:
+                   field: str = "", value: str = "", victim_marker: str = "", base_scheme: str = "https") -> str:
     try:
         if (request or "").strip():
             req = parse_http_request(request, base_scheme)
@@ -31,7 +31,8 @@ def verify_finding(claim: str = "auto", request: str = "", url: str = "", method
         ctrl = parse_http_request(control_request, base_scheme) if (control_request or "").strip() else None
     except ValueError as exc:
         return f"ERROR parsing request: {exc}"
-    return verify(claim, req, point=point, control_request=ctrl, field_name=field, value=value).to_text()
+    return verify(claim, req, point=point, control_request=ctrl, field_name=field, value=value,
+                  victim_marker=victim_marker).to_text()
 
 
 TOOLS = [
@@ -42,7 +43,9 @@ TOOLS = [
             "(`request` = a raw HTTP request pasted from Burp, preferred; or `url` + `method`/`headers`/`body`) "
             "and a `claim`: " + " | ".join(CLAIMS) + ". `point` names the injection point (a query/body/header "
             "param; prefix with query:/body:/json:/header: to be explicit). For idor, pass `control_request` = the "
-            "SAME endpoint with YOUR own id. For jwt, pass `field` and `value` to tamper (e.g. role=admin). Returns "
+            "SAME endpoint with YOUR own id AND `victim_marker` = the victim's unique datum (email/id) that should "
+            "appear only in their record - IDOR CONFIRMS only when that marker is in the target and not your control. "
+            "For jwt, pass `field` and `value` to tamper (e.g. role=admin). Returns "
             "CONFIRMED only when a hard signal proves it (timing/OOB/execution/differential); otherwise UNCONFIRMED "
             "or INCONCLUSIVE. A response code or a reflection alone never confirms. Use this to check your own "
             "findings and to gate anything before it goes in a report."
@@ -58,6 +61,7 @@ TOOLS = [
                 "body": {"type": "string"},
                 "point": {"type": "string", "description": "injection point name, e.g. id, q, or header:X-Forwarded-For"},
                 "control_request": {"type": "string", "description": "for idor: raw request for the SAME endpoint with your OWN id"},
+                "victim_marker": {"type": "string", "description": "for idor: the victim's unique datum (email/id) that should appear only in their record"},
                 "field": {"type": "string", "description": "for jwt: payload field to tamper, e.g. role"},
                 "value": {"type": "string", "description": "for jwt: new value, e.g. admin"},
                 "base_scheme": {"type": "string", "description": "http or https when a raw request has a relative path (default https)"},

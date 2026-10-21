@@ -137,15 +137,19 @@ def _analyze(send, base_body: str, base_len: int, orig: str, exec_url=None, cont
             # caught a real false positive on a page with randomized filler text
             # where TRUE/FALSE-payload noise alone exceeded the flat 40-char/5%
             # floor. The real diff must clearly exceed what naturally varies.
-            _, base2_body = send(orig)
+            base2_status, base2_body = send(orig)
             noise = abs(len(base2_body) - base_len)
-            _, t_body = send(orig + "' OR '1'='1")
-            _, f_body = send(orig + "' AND '1'='2")
+            t_status, t_body = send(orig + "' OR '1'='1")
+            f_status, f_body = send(orig + "' AND '1'='2")
             diff = abs(len(t_body) - len(f_body))
             threshold = max(40, 0.05 * base_len, noise * 3)
-            if diff > threshold:
+            # A length diff is boolean SQLi ONLY if all three responses share the SAME HTTP
+            # status as the normal page. A status differential (a WAF 403 on the 'OR' payload,
+            # a 500 stack page) is a WAF/error signal, not a boolean-blind result - it produced
+            # false "CONFIRMED" before this gate.
+            if t_status == f_status == base2_status and diff > threshold:
                 notes.append(f"SQLi (blind): TRUE vs FALSE payloads gave materially different responses "
-                             f"(diff={diff} chars, well above the page's natural noise of {noise})")
+                             f"(diff={diff} chars, above the page's natural noise of {noise}, same HTTP status)")
                 sqli_confirmed = True
         except httpx.HTTPError:
             pass

@@ -111,10 +111,31 @@ def confirm_xss_exec(url: str) -> bool:
     Playwright missing, navigation error, timeout - so callers fall back to the
     string-reflection heuristic. Not a Tool - an internal helper for webrecon.py."""
     try:
-        page = _ensure_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=12000)
-        page.wait_for_timeout(350)
-        return bool(page.evaluate(f"() => window.{_XSS_EXEC_FLAG} === 1"))
+        from urllib.parse import urlparse
+
+        from c0mr4de import auth
+        _ensure_page()                   # ensure the browser is launched
+        ctx = _browser.new_context()     # fresh context: no window.<flag> survives from a prior check
+        try:
+            a = auth.for_url(url)         # render under the operator session, like browser_navigate
+            if a:
+                host = urlparse(url).hostname
+                if a.get("cookie"):
+                    cookies = []
+                    for pair in a["cookie"].split(";"):
+                        if "=" in pair:
+                            n, val = pair.strip().split("=", 1)
+                            cookies.append({"name": n.strip(), "value": val.strip(), "domain": host, "path": "/"})
+                    if cookies:
+                        ctx.add_cookies(cookies)
+                if a.get("headers"):
+                    ctx.set_extra_http_headers(a["headers"])
+            page = ctx.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=12000)
+            page.wait_for_timeout(350)
+            return bool(page.evaluate(f"() => window.{_XSS_EXEC_FLAG} === 1"))
+        finally:
+            ctx.close()
     except Exception:  # noqa: BLE001
         return False
 
