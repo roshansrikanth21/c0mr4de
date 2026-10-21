@@ -124,19 +124,34 @@ class Hivemind:
         self.on_event("agent_done", {"agent": profile.name, "summary": summary, "counts": bb.counts()})
 
     def _capture(self, bb, profile, captured, summary) -> None:
-        """Route a specialist's outputs into the structured blackboard. A
-        verify_finding CONFIRMED is the ONLY thing that reaches `confirmed`,
-        regardless of which specialist produced it - that is the proof gate."""
+        """Route a specialist's outputs into the structured blackboard from TOOL
+        EVIDENCE, not model prose. A verify_finding CONFIRMED (the verifier's
+        ground-truth marker) is the ONLY thing that reaches `confirmed`; narration
+        is never posted as a lead (a live run showed specialists posting
+        'I apologize for the confusion...' as findings)."""
         post = {"surface": bb.surface_item, "leads": bb.lead,
                 "confirmed": bb.confirm, "notes": bb.note}.get(profile.posts, bb.note)
         for data in captured:
             name, result = data.get("name"), data.get("result", "")
-            if name == "verify_finding" and "[CONFIRMED]" in result:
-                bb.confirm(profile.name, result[:1000])
+            low = result.lower()
+            if "[confirmed]" in low:                                   # verifier ground truth
+                bb.confirm(profile.name, result.splitlines()[0][:300])
+            elif name == "verify_finding" and ("[unconfirmed]" in low or "[inconclusive]" in low):
+                bb.lead(profile.name, result.splitlines()[0][:220])
+            elif name in ("test_injection", "test_all_params") and "likely-vulnerable" in low:
+                bb.lead(profile.name, result[:300])
             elif _looks_like_finding(result):
-                post(profile.name, result[:800])
+                post(profile.name, result[:400])
+        # The summary is prose, not evidence. Keep only: a reconciled CONFIRMED (the
+        # hardened loop appends tool-verified proof), recon's surface synthesis, and the
+        # report note. Exploit/validate narration is dropped.
         if summary and summary.strip():
-            (bb.note if profile.phase in ("validate", "report") else post)(profile.name, summary)
+            if "[CONFIRMED]" in summary or "CONFIRMED (tool-verified" in summary:
+                bb.confirm(profile.name, summary.strip()[:600])
+            elif profile.phase == "recon":
+                bb.surface_item(profile.name, summary.strip()[:500])
+            elif profile.phase == "report":
+                bb.note(profile.name, summary.strip()[:300])
 
 
 # Back-compat alias - older callers/tests import Swarm.

@@ -39,15 +39,29 @@ _PLAN_SIGNALS = ("```", "let's", "we will", "we should", "next step", "step 1", 
 # Tools that constitute actually TESTING an input (not just discovery). Concluding
 # "nothing found" without any of these is the "gave up shallow" failure a live run
 # exposed - crawling alone is not testing, so it must not satisfy the gate.
-_EFFORT_TOOLS = ("test_injection", "sqlmap", "tamper_jwt", "fuzz_param", "oob_poll", "nuclei_scan")
+# verify_finding / test_all_params are the real confirm/test tools, so they count.
+_EFFORT_TOOLS = ("test_injection", "test_all_params", "verify_finding", "sqlmap", "tamper_jwt",
+                 "fuzz_param", "oob_poll", "nuclei_scan")
 _NEGATIVE_SIGNALS = ("no vuln", "no exploitable", "no exploit", "nothing found", "no findings",
                      "not vulnerable", "no obvious", "found nothing", "no issues", "no direct impact",
-                     "no sqli", "no xss", "clean")
+                     "no sqli", "no xss", "clean", "did not reveal", "no injection")
+# Claiming a vuln (positive) also needs backing by a real test/confirmation, not prose.
+_VULN_CLAIM = ("vulnerable", "sql injection", "sqli", "xss", "idor", "ssrf", "rce", "exploitable",
+               "injection point", "auth bypass", "open redirect")
 
 
 def _is_negative_conclusion(text: str) -> bool:
     low = (text or "").lower()
     return any(sig in low for sig in _NEGATIVE_SIGNALS)
+
+
+def _claims_finding(text: str) -> bool:
+    """The model asserts a vuln without it being a negative statement - that claim
+    must be backed by a verify_finding/test tool, not accepted on prose alone."""
+    if _is_negative_conclusion(text):
+        return False
+    low = (text or "").lower()
+    return any(s in low for s in _VULN_CLAIM)
 
 
 def _looks_like_unexecuted_plan(text: str, tools_used: bool) -> bool:
@@ -134,6 +148,7 @@ class AgentLoop:
         wrapup_sent = False
         gate_used = False
         empty_retries = 2
+        confirmed_hits: list[str] = []   # deterministic tool confirmations - ground truth, not prose
 
         def _effort_spent() -> bool:
             return any(any(t in c for t in _EFFORT_TOOLS) for s in self.log for c in s.tool_calls)
@@ -209,24 +224,37 @@ class AgentLoop:
                     )
                     self.log.append(step_log)
                     continue
-                # Completion gate: don't accept a "nothing found" verdict if the run
-                # never actually crawled or tested an input. Fires once, and not near
-                # the step cap (the wrap-up nudge owns that).
-                if (not gate_used and not wrapup_sent and _is_negative_conclusion(response.text)
-                        and not _effort_spent()):
+                # Completion gate: a verdict - "nothing found" OR a vuln CLAIM - must be backed
+                # by a real test/verify tool, not prose. Fires once, not near the step cap.
+                if (not gate_used and not wrapup_sent and not _effort_spent()
+                        and (_is_negative_conclusion(response.text) or _claims_finding(response.text))):
                     gate_used = True
                     if self.verbose:
-                        print("  ~~ completion gate: concluded 'nothing' without testing - pushing to dig")
-                    self.on_event("supervisor", {"action": "gate", "text": "completion gate: dig before concluding"})
+                        print("  ~~ completion gate: concluding without a real test - pushing to verify")
+                    self.on_event("supervisor", {"action": "gate", "text": "completion gate: test/verify before concluding"})
                     messages.append({"role": "assistant", "content": response.text})
                     messages.append({"role": "user", "content": (
-                        "You're concluding no vulnerabilities, but you have not crawled for the real "
-                        "endpoints/params or tested a single input. Before any 'clean' verdict: call "
-                        "crawl_site to map endpoints + params + forms, then test_injection on the params "
-                        "you find (and consult_knowledge / recall_related for this stack). Only report "
-                        "'no findings' AFTER you have actually tested inputs.")})
+                        "Do NOT conclude on prose - you have not run a real test. Call crawl_site to find "
+                        "params, then test_injection on them, and CONFIRM anything you suspect with "
+                        "verify_finding (it returns a deterministic CONFIRMED / UNCONFIRMED). State a verdict "
+                        "ONLY after verify_finding has run; a claim without it does not count.")})
                     self.log.append(step_log)
                     continue
+                # Reconcile prose vs evidence: the model's narration is NOT ground truth. If a tool
+                # deterministically CONFIRMED something, the tool wins - a negative conclusion is
+                # overridden, and a positive one is annotated with the proof so it is never lost.
+                # This is the exact failure a live run exposed (model said "nothing found" while
+                # verify_finding returned CONFIRMED on the same request).
+                if confirmed_hits:
+                    proof = "\n".join(f"- {h}" for h in confirmed_hits)
+                    if _is_negative_conclusion(response.text):
+                        final = ("The model concluded negatively, but tool evidence overrides narration. "
+                                 "DETERMINISTICALLY CONFIRMED this run:\n" + proof)
+                    else:
+                        final = (response.text or "").rstrip() + "\n\nCONFIRMED (tool-verified ground truth):\n" + proof
+                    self.log.append(step_log)
+                    self.on_event("final", {"text": final})
+                    return final
                 self.log.append(step_log)
                 self.on_event("final", {"text": response.text})
                 return response.text
@@ -251,6 +279,8 @@ class AgentLoop:
                         preview = result if len(result) < 500 else result[:500] + "... (truncated)"
                         print(f"  <- {preview}")
                     self.on_event("tool_result", {"name": call.name, "result": result})
+                    if "[CONFIRMED]" in result:   # the verifier's ground-truth marker
+                        confirmed_hits.append(f"{call.name}: {result.splitlines()[0][:220]}")
                 step_log.tool_calls.append(f"{call.name}({call.arguments})")
                 step_log.tool_results.append(result)
                 tool_results.append((call, result))
