@@ -89,6 +89,9 @@ class Hivemind:
         bb = Blackboard(target=target, objective=objective)
         recon, exploit, validate, report = PHASES
         self._phase(recon, bb, objective, target)
+        self._deterministic_sweep(bb, target)   # code-driven detection - never depends on the model
+        if self.should_stop():
+            return bb
         rounds = 0
         while not self.should_stop():
             self._phase(exploit, bb, objective, target)
@@ -105,6 +108,37 @@ class Hivemind:
             self._phase(validate, bb, objective, target)
             self._phase(report, bb, objective, target)
         return bb
+
+    def _deterministic_sweep(self, bb, target: str) -> None:
+        """Run test_all_params in CODE (not via the model) so the hivemind confirms the
+        obvious injectable vulns even when a weak local model fails to drive the tools.
+        This is c0mr4de's determinism-first thesis applied to the swarm: the baseline
+        detection + confirmation is guaranteed; the model-driven specialists add
+        judgment, chaining and coverage on top. Best-effort - never breaks a run."""
+        if self.should_stop():
+            return
+        try:
+            from c0mr4de.tools import build_default_registry
+            tool = build_default_registry().get("test_all_params")
+            if tool is None:
+                return
+            self.on_event("phase", {"name": "sweep", "specialists": ["deterministic-sweep"],
+                                    "parallel": False, "counts": bb.counts()})
+            self.on_event("agent_start", {"agent": "deterministic-sweep", "domain": "code-driven detection"})
+            result = tool.run(url=target)
+            self.on_event("tool_result", {"agent": "deterministic-sweep", "name": "test_all_params",
+                                          "result": result})
+            low = result.lower()
+            if "likely-vulnerable" in low:
+                for line in result.splitlines():
+                    ll = line.lower()
+                    if any(m in ll for m in _TI_CONFIRM):
+                        bb.confirm("deterministic-sweep", line.strip()[:300])
+                    elif line.strip().startswith("[") and ("sqli" in ll or "xss" in ll):
+                        bb.lead("deterministic-sweep", line.strip()[:220])
+            self.on_event("agent_done", {"agent": "deterministic-sweep", "counts": bb.counts()})
+        except Exception:  # noqa: BLE001
+            pass
 
     def _phase(self, group, bb, objective, target, extra: str = "") -> None:
         if not group or self.should_stop():

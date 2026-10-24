@@ -40,6 +40,7 @@ def test_hivemind_phases_parallelism_and_verifier_gate(monkeypatch):
             return "done"
 
     monkeypatch.setattr(orch, "AgentLoop", FakeLoop)
+    monkeypatch.setattr(orch.Hivemind, "_deterministic_sweep", lambda *a, **k: None)  # isolate model-driven flow
     events = []
     hm = orch.Hivemind(on_event=lambda k, d: events.append((k, d)), make_backend=lambda: object())
     bb = hm.run("http://t", "pwn it")
@@ -59,6 +60,20 @@ def test_hivemind_phases_parallelism_and_verifier_gate(monkeypatch):
 
 def test_swarm_is_alias_for_hivemind():
     assert orch.Swarm is orch.Hivemind
+
+
+def test_deterministic_sweep_confirms_without_a_model(monkeypatch):
+    # the code-driven sweep must confirm the obvious vuln even if no specialist model runs
+    from c0mr4de.tools.base import Tool, ToolRegistry
+    reg = ToolRegistry()
+    reg.register(Tool(name="test_all_params", description="", parameters={"type": "object", "properties": {}},
+                      fn=lambda **k: ("test_all_params: crawled 2 pages. LIKELY-VULNERABLE (1):\n"
+                                      "  [/item?id] SQLi: DB error on a single-quote payload (error-based)")))
+    monkeypatch.setattr("c0mr4de.tools.build_default_registry", lambda *a, **k: reg)
+    bb = Blackboard("http://t", "x")
+    orch.Hivemind(make_backend=lambda: object())._deterministic_sweep(bb, "http://t")
+    assert bb.counts()["confirmed"] >= 1
+    assert any("db error" in c["text"].lower() for c in bb.confirmed)
 
 
 def test_test_injection_deterministic_signal_counts_as_confirmed(monkeypatch):
@@ -145,6 +160,7 @@ def test_specialists_run_in_parallel(monkeypatch):
             return "done"
 
     monkeypatch.setattr(orch, "AgentLoop", SleepLoop)
+    monkeypatch.setattr(orch.Hivemind, "_deterministic_sweep", lambda *a, **k: None)  # not part of this timing test
     hm = orch.Hivemind(on_event=lambda k, d: None, make_backend=lambda: object(), max_feedback=0)
     t = time.time()
     hm.run("http://t", "x")
