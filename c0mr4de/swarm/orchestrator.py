@@ -92,18 +92,24 @@ class Hivemind:
         self._deterministic_sweep(bb, target)   # code-driven detection - never depends on the model
         if self.should_stop():
             return bb
+        # Mutual collaboration loop: recon's output feeds exploitation, exploitation's output
+        # (gaps + new findings) feeds recon, and so on - the bidirectional "one agent's input is
+        # the other's output, and vice versa" flow. It runs until the shared blackboard STOPS
+        # changing (convergence), with max_feedback as a safety cap. Terminated by convergence,
+        # NOT an unbounded A<->B cycle (which would deadlock).
         rounds = 0
         while not self.should_stop():
             self._phase(exploit, bb, objective, target)
             fresh = bb.new_gaps()                 # gaps the exploit specialists fed back to recon
+            # Converged when exploitation raised no new gaps for recon to fill; otherwise recon
+            # consumes those gaps, re-surfaces, and exploitation runs again - the bidirectional
+            # loop continues until it converges (no new gaps) or the safety cap is reached.
             if not fresh or rounds >= self.max_feedback:
                 break
             rounds += 1
             self.on_event("feedback", {"round": rounds, "gaps": [g["text"] for g in fresh]})
-            # Bounded bidirectional flow: an exploit specialist's gap becomes recon's input, and
-            # the new surface becomes exploitation's input again - capped at max_feedback rounds,
-            # so there is no unbounded A<->B cycle.
             self._phase([RUNTIME_RECON], bb, objective, target, extra=bb.gaps_brief(fresh))
+            self._deterministic_sweep(bb, target)   # re-sweep any newly surfaced endpoints
         if not self.should_stop():
             self._phase(validate, bb, objective, target)
             self._phase(report, bb, objective, target)
