@@ -56,13 +56,17 @@ def _active_backend_cfg() -> dict:
 
 class Hivemind:
     def __init__(self, backend=None, max_steps: int = 14, on_event=None, should_stop=None, make_backend=None,
-                 max_feedback: int = 1):
+                 max_feedback: int = 2):
         self.backend = backend                 # kept for the "backend name" event; specialists get fresh ones
         self.max_steps = max_steps
         self.on_event = on_event or (lambda kind, data: None)
         self.should_stop = should_stop or (lambda: False)
         self._make_backend = make_backend      # test seam: () -> backend
-        self.max_feedback = max_feedback       # bounded exploit->recon feedback rounds (0 disables)
+        # The shared blackboard already gives continuous MUTUAL flow within a phase (every
+        # specialist reads the others' surface/leads/confirmed and writes its own). This caps
+        # the extra CROSS-phase exploit->recon->exploit rounds, which keep running while new gaps
+        # are raised, up to this bound (0 disables). A hard cap, not an unbounded A<->B cycle.
+        self.max_feedback = max_feedback
 
     def _new_backend(self):
         if self._make_backend:
