@@ -35,25 +35,50 @@
 #     model: claude-sonnet-5
 #     # api_key via ANTHROPIC_API_KEY env var
 #
-#   # --- Hosted free/cheap "good knowledge base" models (GLM, DeepSeek, ...) ---
-#   # All OpenAI-compatible, so they slot straight into type: openai_compatible.
-#   # These give the hivemind REAL parallelism (a single local model serializes;
-#   # a hosted API runs specialists concurrently). Verify current free models +
-#   # limits on each provider - they change.
-#   glm-flash:                 # Z.ai GLM-4.5-Flash / 4.7-Flash are free (rate-limited)
+#   # --- Hosted "fast + good knowledge base" models (GLM, DeepSeek, ...) ---
+#   # All OpenAI-compatible, so they slot straight into type: openai_compatible, and
+#   # a hosted API gives the hivemind REAL parallelism (a single local model
+#   # serializes). Free tiers change constantly - verify limits in your account.
+#   #
+#   # OpenCode Zen - if you already use OpenCode, its models are reachable from HERE
+#   # with the SAME key (it's OpenAI-compatible). Get the key at opencode.ai/auth.
+#   opencode-zen:
 #     type: openai_compatible
-#     model: glm-4.5-flash
+#     model: deepseek-v4-flash-free   # or whatever /zen/v1/models lists for your key
+#     base_url: https://opencode.ai/zen/v1
+#     api_key: ...                      # your OpenCode Zen key (OPENCODE_API_KEY)
+#   #
+#   # NVIDIA NIM - best genuinely-free fit for a pentest agent: DeepSeek V4.1 Flash
+#   # at ~1M context, ~40 req/min, free. Get a key at build.nvidia.com.
+#   nvidia-deepseek:
+#     type: openai_compatible
+#     model: deepseek-ai/deepseek-v4.1-flash
+#     base_url: https://integrate.api.nvidia.com/v1
+#     api_key: ...
+#   #
+#   # Z.ai GLM Flash - GLM-4.7-Flash / 4.5-Flash free (non-commercial), rate-limited.
+#   glm-flash:
+#     type: openai_compatible
+#     model: glm-4.7-flash
 #     base_url: https://api.z.ai/api/paas/v4
-#     api_key: ...             # free Z.ai key
-#   deepseek:                  # cheap, strong; not free
+#     api_key: ...
+#   #
+#   # DeepSeek official - cheap, strong, not free; OpenAI-compatible.
+#   deepseek:
 #     type: openai_compatible
 #     model: deepseek-chat
 #     base_url: https://api.deepseek.com
 #     api_key: ...
-#   openrouter-glm:            # OpenRouter aggregates many (some free) models
+#   #
+#   # Abliterated (uncensored) HOSTED option - e.g. Featherless hosts
+#   # Huihui-Qwen abliterated models behind an OpenAI-compatible API (flat rate).
+#   # Use this ONLY for an uncensored Q&A/"ask" slot - abliteration degrades tool-
+#   # calling, and authorized pentest work does not need it. Check the provider's
+#   # privacy/ToS before sending target data.
+#   abliterated-ask:
 #     type: openai_compatible
-#     model: z-ai/glm-4.6
-#     base_url: https://openrouter.ai/api/v1
+#     model: huihui-ai/Huihui-Qwen3.5-27B-abliterated
+#     base_url: https://api.featherless.ai/v1
 #     api_key: ...
 
 backend:
