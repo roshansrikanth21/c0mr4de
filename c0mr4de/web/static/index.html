@@ -305,6 +305,35 @@
   .authpill .ic{width:11px;height:11px}
   .subnote{color:var(--faint);font-size:11px;margin-bottom:8px;line-height:1.5}
 
+  /* ---- system / setup panel ---- */
+  #sysPill{display:inline-flex;align-items:center;gap:6px;cursor:pointer;background:transparent;border:none;
+    font-family:var(--mono);font-size:10.5px;color:var(--muted);padding:0 15px;height:16px;transition:color .14s;
+    border-right:1px solid var(--line-hair)}
+  #sysPill:hover{color:var(--txt)}
+  #sysPill .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+  #sysPill.warn .dot{background:var(--high)} #sysPill.err .dot{background:var(--crit);animation:pulse 1.6s ease-in-out infinite}
+  #sysPill .lab{letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
+  .sysmini{display:flex;gap:8px;margin-bottom:14px}
+  .sysmini .m{flex:1;text-align:center;padding:10px 6px;border:1px solid var(--line);border-radius:var(--r-sm);font-family:var(--mono)}
+  .sysmini .m .n{font-size:18px;font-weight:600;display:block;color:var(--muted)}
+  .sysmini .m.ok .n{color:var(--ok)} .sysmini .m.warn .n{color:var(--high)} .sysmini .m.err .n{color:var(--crit)}
+  .sysmini .m .l{font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
+  .pathrow{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-sm);margin-bottom:6px}
+  .pathrow .pk{color:var(--faint);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-family:var(--mono);width:68px;flex:none}
+  .pathrow .pv{flex:1;min-width:0;color:var(--txt);font-family:var(--mono);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;unicode-bidi:plaintext;direction:rtl;text-align:left}
+  .pathrow .ghost{flex:none;padding:5px 11px;font-size:11px}
+  .syscheck{display:flex;gap:11px;padding:11px 12px;border:1px solid var(--line);border-radius:var(--r-sm);margin-bottom:6px}
+  .syscheck .sd{width:8px;height:8px;border-radius:50%;flex:none;margin-top:5px;background:var(--faint)}
+  .syscheck.ok .sd{background:var(--ok)} .syscheck.warn .sd{background:var(--high)} .syscheck.error .sd{background:var(--crit)}
+  .syscheck .scm{flex:1;min-width:0}
+  .syscheck .sc-lbl{color:var(--txt);font-weight:500;font-size:12.5px}
+  .syscheck .sc-det{color:var(--faint);font-size:10.5px;font-family:var(--mono);margin-top:1px}
+  .syscheck .sc-todo{color:var(--muted);font-size:11.5px;margin-top:6px;line-height:1.5}
+  .syscheck .sc-act{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap;align-items:center}
+  .syscheck .sc-act a,.syscheck .sc-act .cpy{font-size:10.5px;padding:4px 10px;text-decoration:none}
+  .syscheck .cmd{font-family:var(--mono);font-size:10.5px;color:var(--accent);background:var(--accent-dim);
+    padding:2px 7px;border-radius:4px}
+
   /* osint graph overlay */
   #gov{position:fixed;inset:0;background:rgba(10,8,5,.8);z-index:320;display:none}
   #gov.on{display:block;animation:fade .18s var(--ease)}
@@ -349,6 +378,7 @@
       <div class="sb"><span class="lab">target</span><span class="val target" id="st-target">-</span></div>
       <div class="sb"><span class="lab">state</span><span class="val state" id="st-state">idle</span></div>
       <div class="sb"><span class="lab">tools</span><span class="val" id="st-tools">0</span></div>
+      <button id="sysPill" style="margin-left:auto" title="System &amp; setup - what's configured, what's missing, where c0mr4de works"><span class="dot"></span><span class="lab">system</span><span class="val" id="sysPillTxt" style="color:var(--muted);font-weight:500">...</span></button>
       <div class="sb" id="sb-right"><span class="lab">mode</span><span class="val" id="st-mode">agent</span></div>
     </div>
 
@@ -358,7 +388,7 @@
         <canvas class="act-orb" id="actOrb"></canvas>
         <div class="act-main">
           <div class="act-text" id="actText">Starting run<span class="caret"></span></div>
-          <div class="act-meta"><span id="actStep">step 0</span><span class="sep">·</span><span id="actTimer">0s</span><span class="sep">·</span><span id="actPhase">agent</span></div>
+          <div class="act-meta"><span id="actStep">step 0</span><span class="sep">·</span><span id="actTimer">0s</span><span class="sep">·</span><span id="actPhase">agent</span><span class="sep" id="actWhySep" style="display:none">·</span><span id="actWhy"></span></div>
         </div>
       </div>
     </div>
@@ -418,6 +448,21 @@
     </div>
   </div></div>
 
+  <!-- SYSTEM / SETUP -->
+  <div id="sysov" class="overlay"><div id="sysmodal" class="modalbox">
+    <div class="mh"><b>System &amp; setup</b>
+      <span style="color:var(--faint);margin-left:10px;font-size:11px">what's ready, what's missing, and where c0mr4de works</span>
+      <button class="ghost rbtn" id="sysRefresh" style="margin-left:auto"><svg class="ic" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> recheck</button>
+      <span class="x" id="sysClose" style="margin-left:12px"><svg class="ic" viewBox="0 0 24 24" width="17" height="17"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+    <div class="mb">
+      <div class="sysmini" id="sysMini"></div>
+      <h5>Working directories <span style="color:var(--faint)">· open any in Explorer</span></h5>
+      <div id="sysPaths"></div>
+      <h5>Checks <span style="color:var(--faint)">· fix what's red/amber to unlock more capability</span></h5>
+      <div id="sysChecks">loading…</div>
+    </div>
+  </div></div>
+
   <!-- REPORT VIEWER -->
   <div id="rov" class="overlay"><div id="rmodal" class="modalbox">
     <div class="mh"><b id="rtitle">report</b>
@@ -468,7 +513,8 @@ const taskEl=document.getElementById('task'), sendBtn=document.getElementById('s
 const stTarget=document.getElementById('st-target'), stState=document.getElementById('st-state'), stTools=document.getElementById('st-tools');
 const stMode=document.getElementById('st-mode'), brandLive=document.getElementById('brandLive');
 const activity=document.getElementById('activity'), actText=document.getElementById('actText'),
-      actStep=document.getElementById('actStep'), actTimer=document.getElementById('actTimer'), actPhase=document.getElementById('actPhase');
+      actStep=document.getElementById('actStep'), actTimer=document.getElementById('actTimer'), actPhase=document.getElementById('actPhase'),
+      actWhy=document.getElementById('actWhy'), actWhySep=document.getElementById('actWhySep');
 let attachments=[], currentChat=null, tools=0;
 
 /* inline icon set (Lucide-style) */
@@ -587,6 +633,22 @@ function humanTool(name,args){
   if(f){try{const r=f(args||{});if(r&&r.trim())return r;}catch(e){}}
   return name.replace(/_/g,' ');
 }
+/* the "why": a short reason shown alongside each step so it's clear WHY the work is happening */
+const _toolWhy={
+  crawl_site:'map the attack surface',crawl:'map the attack surface',probe:'map the attack surface',
+  http_request:'inspect a response',test_injection:'confirm an injection signal',
+  test_all_params:'sweep params for confirmable bugs',fuzz_paths:'find hidden endpoints',fuzz_param:'probe a parameter',
+  nuclei_scan:'check known-vuln templates',amass_enum:'expand the subdomain surface',subfinder:'expand the subdomain surface',
+  naabu_scan:'find open ports/services',shodan_host:'pull external exposure',reconftw:'run full recon',
+  write_report:'write up confirmed findings',consult_knowledge:'pull playbook guidance',recall_related:'recall prior context',
+  search_writeups:'learn from past writeups',fetch_writeup:'learn from a writeup',decode_jwt:'read the token',tamper_jwt:'test token trust',
+  browser_navigate:'drive the browser',browser_screenshot:'capture proof',browser_eval:'interact with the page',
+  ocr_image:'read the image',map_attack_surface:'structure the surface',import_scan:'fold in scan output',
+  google_dork:'OSINT search',username_search:'pivot on a handle',email_osint:'pivot on an email',
+  oob_start:'arm an out-of-band listener',oob_poll:'check for blind callbacks',
+  read_file:'read context',write_file:'save output',list_workspace:'check its files',
+};
+function setWhy(name){const w=_toolWhy[name]||''; actWhy.textContent=w?'to '+w:''; actWhySep.style.display=w?'':'none';}
 function cleanResult(text){
   text=text||''; const sample=text.slice(0,2000); let bad=0;
   for(const ch of sample){const c=ch.codePointAt(0);if(c===0xFFFD||(c<32&&c!==9&&c!==10&&c!==13))bad++;}
@@ -765,9 +827,11 @@ async function loadReports(){
     const label=r.name.replace(/^report-/,'').replace(/\.md$/,'');
     return `<div class="rrow"><div><div class="nm">${esc(label)}</div><div class="ep">${dt} · ${(r.size/1024).toFixed(1)} KB</div></div>
       <div class="rt"><button class="ghost rbtn" data-view="${esc(r.name)}">view</button>
+      <button class="ghost rbtn" data-reveal="${esc(r.name)}" title="show the file in Explorer">open</button>
       <a class="ghost rbtn" href="/reports/${encodeURIComponent(r.name)}/download" download>download</a></div></div>`;
   }).join('');
   box.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>viewReport(b.dataset.view));
+  box.querySelectorAll('[data-reveal]').forEach(b=>b.onclick=()=>revealPath(b.dataset.reveal));
 }
 const rov=document.getElementById('rov');
 document.getElementById('rclose').onclick=()=>rov.classList.remove('on');
@@ -817,6 +881,74 @@ async function openChat(id){
   feed.scrollTop=feed.scrollHeight;
 }
 
+/* ---- system / setup panel: what's missing, how to fix, where it works ---- */
+const sysov=document.getElementById('sysov'), sysPill=document.getElementById('sysPill');
+let sysLoaded=false;
+function fmtTodo(t){return esc(t||'').replace(/`([^`]+)`/g,'<span class="cmd">$1</span>');}
+async function revealPath(path){
+  try{
+    const j=await fetch('/reveal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})}).then(r=>r.json());
+    if(j.error) toast({level:'err',title:'Could not open',body:esc(j.error)});
+  }catch(e){toast({level:'err',title:'Could not open',body:esc(String(e))});}
+}
+function openCmd(cmd){ // a copyable command button
+  const b=document.createElement('button'); b.className='ghost cpy'; b.textContent='copy command';
+  b.onclick=()=>{navigator.clipboard.writeText(cmd).then(()=>{b.textContent='copied';setTimeout(()=>b.textContent='copy command',1200);});};
+  return b;
+}
+function paintSysPill(sum){
+  const txt=document.getElementById('sysPillTxt');
+  const err=sum.error||0, warn=sum.warn||0;
+  sysPill.classList.toggle('err',err>0); sysPill.classList.toggle('warn',err===0&&warn>0);
+  txt.textContent = err>0 ? (err+' blocking') : warn>0 ? (warn+' to set up') : 'ready';
+  txt.style.color = err>0?'var(--crit)':warn>0?'var(--high)':'var(--ok)';
+}
+async function loadSystem(open,fresh){
+  if(open){sysov.classList.add('on');document.getElementById('sysChecks').innerHTML=skel(4,true);}
+  const d=await fetch('/system'+(fresh?'?fresh=1':'')).then(r=>r.json());
+  paintSysPill(d.summary); sysLoaded=true;
+  if(!open && d.summary.error>0 && !loadSystem._warned){
+    loadSystem._warned=true;
+    toast({level:'err',title:'c0mr4de needs setup',body:'The active model is not reachable. Open <b style="color:var(--accent)">system</b> (top bar) for the exact fix.',ttl:13000,
+      actionLabel:'open system',onAction:()=>loadSystem(true)});
+  }
+  if(!open) return;
+  // mini summary tiles
+  document.getElementById('sysMini').innerHTML=
+    `<div class="m ok"><span class="n">${d.summary.ok}</span><span class="l">ready</span></div>`+
+    `<div class="m warn"><span class="n">${d.summary.warn}</span><span class="l">optional</span></div>`+
+    `<div class="m err"><span class="n">${d.summary.error}</span><span class="l">blocking</span></div>`;
+  // working paths, each openable in Explorer
+  const P=d.paths||{};
+  document.getElementById('sysPaths').innerHTML=
+    [['workspace',P.workspace,'where scans, reports & uploads are written'],
+     ['repo',P.repo,'c0mr4de source'],
+     ['config',P.config,'models & keys']]
+    .map(([k,v])=>v?`<div class="pathrow"><span class="pk">${k}</span><span class="pv" title="${esc(v)}">${esc(v)}</span>`+
+      `<button class="ghost" data-reveal="${esc(v)}">open</button></div>`:'').join('');
+  document.getElementById('sysPaths').querySelectorAll('[data-reveal]').forEach(b=>b.onclick=()=>revealPath(b.dataset.reveal));
+  // checks: error first, then warn, then ok
+  const order={error:0,warn:1,ok:2};
+  const checks=(d.checks||[]).slice().sort((a,b)=>order[a.level]-order[b.level]);
+  const box=document.getElementById('sysChecks'); box.innerHTML='';
+  for(const c of checks){
+    const row=document.createElement('div'); row.className='syscheck '+c.level;
+    row.innerHTML=`<span class="sd"></span><div class="scm"><div class="sc-lbl">${esc(c.label)}</div>`+
+      `<div class="sc-det">${esc(c.detail||'')}</div>`+
+      (c.todo?`<div class="sc-todo">${fmtTodo(c.todo)}</div>`:'')+`<div class="sc-act"></div></div>`;
+    const act=row.querySelector('.sc-act');
+    if(c.link){const a=document.createElement('a');a.className='ghost rbtn';a.href=c.link;a.target='_blank';a.rel='noopener';
+      a.innerHTML=`${icon('arrow',11)} get it`;act.appendChild(a);}
+    const m=(c.todo||'').match(/`([^`]+)`/); if(m) act.appendChild(openCmd(m[1]));
+    if(!c.link && !m) act.remove();
+    box.appendChild(row);
+  }
+}
+sysPill.onclick=()=>loadSystem(true);
+document.getElementById('sysClose').onclick=()=>sysov.classList.remove('on');
+document.getElementById('sysRefresh').onclick=()=>loadSystem(true,true);
+sysov.onclick=e=>{if(e.target===sysov)sysov.classList.remove('on');};
+
 /* render an event */
 let live=false;
 function renderEvent(kind,data){
@@ -825,14 +957,19 @@ function renderEvent(kind,data){
     const names=(data.specialists||[]).join(', ');
     const par=data.parallel?' (parallel)':((data.specialists||[]).length>1?' (sequential)':'');
     add('phase',`phase: ${esc(data.name)}${par}<span class="sub">${esc(names)}</span>`);
-    if(live){actPhase.textContent=data.name;setActivity('phase: '+data.name+par);}
+    if(live){actPhase.textContent=data.name;setActivity('phase: '+data.name+par);setWhy('');}
     return;}
   if(kind==='agent_start'){flushSteps();
     add('phase',`${esc(data.agent)}<span class="sub">${esc(data.domain||'specialist')}</span>`);
-    if(live){actPhase.textContent=data.agent;setActivity(data.domain||data.agent);}
+    if(live){actPhase.textContent=data.agent;setActivity(data.domain||data.agent);setWhy('');}
     return;}
   if(kind==='agent_done'){
     if(data.counts){const c=data.counts;stTools.title=`confirmed ${c.confirmed} · leads ${c.leads} · surface ${c.surface}`;}
+    return;}
+  if(kind==='feedback'){flushSteps();
+    const gaps=(data.gaps||[]).slice(0,4).join('; ');
+    add('phase',`feedback round ${data.round}<span class="sub">exploitation fed ${(data.gaps||[]).length} gap(s) back to recon${gaps?': '+esc(gaps):''}</span>`);
+    if(live)setActivity('feeding findings back to recon (round '+data.round+')');
     return;}
   if(kind==='thought'){
     stepBuf.push({think:true,count:1,html:`<div class="think"><span class="p">[reasoning]</span> ${ag}${md(data.text)}</div>`});
@@ -842,7 +979,7 @@ function renderEvent(kind,data){
     tools++;stTools.textContent=tools;
     const label=humanTool(data.name,data.arguments);
     stepBuf.push({name:data.name,label,key:toolKey(data.name,data.arguments),count:1,resultHtml:''});
-    if(live){actStep.textContent='step '+tools;setActivity(label);}
+    if(live){actStep.textContent='step '+tools;setActivity(label);setWhy(data.name);}
   }
   else if(kind==='tool_result'){
     if(isFinding(data.result)){
@@ -977,6 +1114,7 @@ showEmpty();
 loadChats();
 loadRoles();
 loadModels();
+loadSystem();
 </script>
 </body>
 </html>

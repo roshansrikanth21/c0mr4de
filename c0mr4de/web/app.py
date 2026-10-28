@@ -11,8 +11,11 @@ Uses config/config.yaml for the backend, same as the CLI.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
+import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -257,6 +260,181 @@ def settings_get():
     registry = build_default_registry()
     return {"mode": b.get("type", "single"), "chain": out, "tools": registry.names(),
             "tool_count": len(registry.names())}
+
+
+# --- system / setup status: what's configured, what's missing, how to fix it ---
+
+_PROVIDER_LINKS = {
+    "opencode.ai": ("OpenCode Zen", "https://opencode.ai/auth"),
+    "z.ai": ("Z.ai (GLM)", "https://z.ai/manage-apikey/apikey-list"),
+    "nvidia.com": ("NVIDIA NIM", "https://build.nvidia.com"),
+    "deepseek.com": ("DeepSeek", "https://platform.deepseek.com/api_keys"),
+    "openrouter.ai": ("OpenRouter", "https://openrouter.ai/keys"),
+    "featherless.ai": ("Featherless", "https://featherless.ai"),
+    "groq.com": ("Groq", "https://console.groq.com/keys"),
+    "googleapis.com": ("Google AI Studio", "https://aistudio.google.com/apikey"),
+}
+
+
+def _provider_for(base_url: str):
+    for host, (name, link) in _PROVIDER_LINKS.items():
+        if host in (base_url or ""):
+            return name, link
+    return "this provider", None
+
+
+def _is_local_url(url: str) -> bool:
+    return any(h in (url or "") for h in ("localhost", "127.0.0.1", "[::1]"))
+
+
+def _has_playwright() -> bool:
+    try:
+        import playwright  # noqa: F401
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _docker_up_fast() -> bool:
+    """Docker reachability bounded to 3s so /system stays snappy. envcheck's own
+    _docker_up uses a longer timeout for the CLI doctor; here responsiveness wins."""
+    import shutil
+    if shutil.which("docker") is None:
+        return False
+    try:
+        return subprocess.run(["docker", "info"], capture_output=True, timeout=3).returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _probe_backend(b: dict):
+    """(reachable, {todo, link}) for the active backend."""
+    try:
+        if b.get("type") == "ollama":
+            httpx.get((b.get("host", "http://localhost:11434")) + "/api/tags", timeout=3)
+            return True, {}
+        if b.get("base_url"):
+            r = httpx.get(b["base_url"].rstrip("/") + "/models",
+                          headers={"Authorization": f"Bearer {b.get('api_key', '')}"}, timeout=6)
+            if r.status_code == 200:
+                return True, {}
+            prov, link = _provider_for(b["base_url"])
+            return False, {"todo": f"The {prov} endpoint returned HTTP {r.status_code} - check the api_key "
+                                   f"in config.yaml for this model.", "link": link}
+    except Exception:  # noqa: BLE001
+        pass
+    if b.get("type") == "ollama":
+        return False, {"todo": "Ollama isn't reachable. Run `ollama serve`, then `ollama pull "
+                               f"{b.get('model', 'qwen2.5-coder:7b')}`.", "link": "https://ollama.com/download"}
+    prov, link = _provider_for(b.get("base_url", ""))
+    return False, {"todo": f"Can't reach {prov}. Add or fix the api_key for this model in config.yaml, "
+                           f"or start its local server.", "link": link}
+
+
+_sys_cache: dict = {"t": 0.0, "data": None}
+
+
+@app.get("/system")
+def system_status(fresh: bool = False):
+    """Everything the operator needs to see at a glance: what's configured, what's
+    missing, exactly how to fix each gap (with links), and where c0mr4de is working.
+    Cached for a few seconds so the page-load probe and opening the panel don't both
+    re-run the slow reachability checks; the panel's 'recheck' passes fresh=1."""
+    import shutil
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    if not fresh and _sys_cache["data"] is not None and (time.time() - _sys_cache["t"]) < 12:
+        return _sys_cache["data"]
+
+    from c0mr4de.tools.envcheck import _ollama_up
+    cfg = _read_cfg()
+    b = _active_backend_cfg(cfg)
+    active = _active_model_name(cfg)
+    # the three slow probes (model reachability, ollama, docker) run concurrently and
+    # bounded, so the whole endpoint answers in a few seconds even when nothing is up.
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_reach, f_ol, f_dk = ex.submit(_probe_backend, b), ex.submit(_ollama_up), ex.submit(_docker_up_fast)
+        reach, why = f_reach.result()
+        ol, dk = f_ol.result(), f_dk.result()
+    checks = [{
+        "label": f"Active model - {active or '(none set)'}",
+        "level": "ok" if reach else "error",
+        "detail": f"{b.get('type')} - {b.get('base_url') or b.get('host') or 'local'}",
+        "todo": None if reach else why.get("todo"), "link": None if reach else why.get("link"),
+    }]
+    # hosted presets missing an api key
+    for name, m in (cfg.get("models") or {}).items():
+        if m.get("type") in ("openai_compatible", "anthropic"):
+            base, key = m.get("base_url", ""), str(m.get("api_key", "")).strip()
+            if not _is_local_url(base) and key in ("", "...", "<your-key>", "YOUR_KEY"):
+                prov, link = _provider_for(base)
+                checks.append({"label": f"Preset '{name}' - no API key", "level": "warn",
+                               "detail": f"{prov} model, key not set",
+                               "todo": f"Get a key from {prov}, then set it under models.{name}.api_key in config.yaml.",
+                               "link": link})
+    checks.append({"label": "Ollama (local models)", "level": "ok" if ol else "warn",
+                   "detail": "running" if ol else "not running",
+                   "todo": None if ol else "Run `ollama serve` (and `ollama pull qwen2.5-coder:7b`).",
+                   "link": None if ol else "https://ollama.com/download"})
+    checks.append({"label": "Docker (containerized recon tools)", "level": "ok" if dk else "warn",
+                   "detail": "running" if dk else "not running",
+                   "todo": None if dk else "Start Docker Desktop to run katana/naabu/nuclei from images (optional - native installs also work).",
+                   "link": None if dk else "https://www.docker.com/products/docker-desktop/"})
+    for tool, hint, link in [
+        ("nuclei", "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest", "https://github.com/projectdiscovery/nuclei"),
+        ("nmap", "Install nmap for port/service scanning.", "https://nmap.org/download"),
+        ("sqlmap", "pip install sqlmap-dev, or clone the repo.", "https://sqlmap.org"),
+        ("semgrep", "pip install semgrep (for source-audit).", "https://semgrep.dev"),
+        ("interactsh-client", "go install github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest (blind/OOB vulns).", "https://github.com/projectdiscovery/interactsh"),
+    ]:
+        ok = shutil.which(tool) is not None
+        checks.append({"label": tool, "level": "ok" if ok else "warn",
+                       "detail": "installed" if ok else "not found (optional)",
+                       "todo": None if ok else hint, "link": None if ok else link})
+    pw = _has_playwright()
+    checks.append({"label": "Playwright (execution-confirmed XSS)", "level": "ok" if pw else "warn",
+                   "detail": "installed" if pw else "not installed",
+                   "todo": None if pw else "pip install playwright && playwright install chromium",
+                   "link": None if pw else "https://playwright.dev/python/docs/intro"})
+    summary = {lvl: sum(1 for c in checks if c["level"] == lvl) for lvl in ("ok", "warn", "error")}
+    result = {"checks": checks, "summary": summary,
+              "paths": {"workspace": str(WORKSPACE), "repo": str(REPO),
+                        "config": str(REPO / "config" / "config.yaml")},
+              "active_model": active, "reachable": reach}
+    _sys_cache.update(t=time.time(), data=result)
+    return result
+
+
+@app.post("/reveal")
+def reveal(path: str = Body(..., embed=True)):
+    """Open a c0mr4de-produced file or folder in the OS file explorer. Scoped to the
+    workspace/repo so the UI can only reveal c0mr4de's own paths."""
+    p = Path(path)
+    if not p.is_absolute():
+        p = WORKSPACE / path
+    try:
+        p = p.resolve()
+    except Exception:  # noqa: BLE001
+        return {"error": "bad path"}
+    roots = [WORKSPACE.resolve(), REPO.resolve()]
+    if not any(str(p) == str(r) or str(p).startswith(str(r) + os.sep) for r in roots):
+        return {"error": "path is outside the c0mr4de workspace"}
+    if not p.exists():
+        return {"error": "path not found"}
+    try:
+        if sys.platform == "win32":
+            if p.is_file():
+                subprocess.Popen(["explorer", "/select,", str(p)])
+            else:
+                subprocess.Popen(["explorer", str(p)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(p)] if p.is_file() else ["open", str(p)])
+        else:
+            subprocess.Popen(["xdg-open", str(p.parent if p.is_file() else p)])
+        return {"ok": True, "path": str(p)}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
 
 
 # active runs, keyed by chat_id, so a Stop button can cancel them
