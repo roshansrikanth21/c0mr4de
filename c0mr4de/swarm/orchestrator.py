@@ -92,6 +92,7 @@ class Hivemind:
         recon, exploit, validate, report = PHASES
         self._phase(recon, bb, objective, target)
         self._deterministic_sweep(bb, target)   # code-driven detection - never depends on the model
+        self._correlate(bb)                      # tie source findings to live endpoints (Shannon-style)
         if self.should_stop():
             return bb
         # Mutual collaboration loop: recon's output feeds exploitation, exploitation's output
@@ -112,10 +113,28 @@ class Hivemind:
             self.on_event("feedback", {"round": rounds, "gaps": [g["text"] for g in fresh]})
             self._phase([RUNTIME_RECON], bb, objective, target, extra=bb.gaps_brief(fresh))
             self._deterministic_sweep(bb, target)   # re-sweep any newly surfaced endpoints
+            self._correlate(bb)                      # re-correlate against the newly surfaced endpoints
         if not self.should_stop():
             self._phase(validate, bb, objective, target)
             self._phase(report, bb, objective, target)
         return bb
+
+    def _correlate(self, bb) -> None:
+        """Tie source-audit findings to live runtime endpoints (Shannon's edge): a
+        SAST sink that recon confirmed is reachable is the highest-value lead. Pure,
+        code-driven, best-effort - posts correlated LEADS the exploit specialists see
+        first. Never breaks a run."""
+        if self.should_stop():
+            return
+        try:
+            from c0mr4de.swarm.correlate import correlate_blackboard
+            hits = correlate_blackboard(bb)
+            if hits:
+                self.on_event("correlate", {"count": len(hits),
+                                            "leads": [h["text"][:160] for h in hits[:4]],
+                                            "counts": bb.counts()})
+        except Exception:  # noqa: BLE001
+            pass
 
     def _deterministic_sweep(self, bb, target: str) -> None:
         """Run test_all_params in CODE (not via the model) so the hivemind confirms the

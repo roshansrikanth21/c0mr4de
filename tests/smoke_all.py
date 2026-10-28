@@ -193,6 +193,13 @@ def _swarm():
     return " ".join(f"{k}={v}" for k, v in counts.items())
 check("swarm", "specialist profiles + scoped tools", _swarm)
 
+from c0mr4de.swarm.correlate import correlate as _corr  # noqa: E402
+def _correlate():
+    hits = _corr([{"agent": "code-audit", "text": "search.php param 'id' -> mysql_query (SQLi)"}],
+                 [{"agent": "runtime-recon", "text": "GET http://t/search?id=1"}])
+    return f"{len(hits)} correlated -> {hits[0]['specialist']}" if hits else "none"
+check("swarm", "source<->runtime correlation", _correlate)
+
 # ── 13. Interfaces + ingestion modules import ─────────────────────────────────
 check("interface", "web app import", lambda: __import__("c0mr4de.web.app", fromlist=["app"]).app.__class__.__name__)
 check("interface", "cli import", lambda: "ok" if __import__("c0mr4de.cli", fromlist=["main"]).main else "?")

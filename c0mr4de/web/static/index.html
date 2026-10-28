@@ -981,6 +981,11 @@ function renderEvent(kind,data){
     add('phase',`feedback round ${data.round}<span class="sub">exploitation fed ${(data.gaps||[]).length} gap(s) back to recon${gaps?': '+esc(gaps):''}</span>`);
     if(live)setActivity('feeding findings back to recon (round '+data.round+')');
     return;}
+  if(kind==='correlate'){flushSteps();
+    const leads=(data.leads||[]).slice(0,3).join(' · ');
+    add('phase',`source&harr;runtime correlation<span class="sub">${data.count} source finding(s) matched to live endpoints${leads?': '+esc(leads):''}</span>`);
+    if(live)setActivity('correlating source findings with live endpoints');
+    return;}
   if(kind==='thought'){
     stepBuf.push({think:true,count:1,html:`<div class="think"><span class="p">[reasoning]</span> ${ag}${md(data.text)}</div>`});
     if(live)setActivity('Reasoning');
