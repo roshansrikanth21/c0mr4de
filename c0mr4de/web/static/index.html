@@ -775,7 +775,18 @@ async function loadModels(){
       }
       modelPick.appendChild(g);
     }
-    if(j.active)modelPick.value=j.active;
+    // the active backend may be the config default, not a discovered/preset entry -
+    // make sure it's always a selectable option so the dropdown never renders blank.
+    if(j.active){
+      if(![...modelPick.options].some(o=>o.value===j.active)){
+        const g=document.createElement('optgroup'); g.label='Active';
+        const o=document.createElement('option'); o.value=j.active;
+        o.textContent=j.active.replace(/^openai-compat:|^ollama:/,'')+' · current';
+        o.title='The active backend (from config.yaml). Not auto-discovered - start it or pick another.';
+        g.appendChild(o); modelPick.insertBefore(g, modelPick.firstChild);
+      }
+      modelPick.value=j.active;
+    }
   }catch(e){modelPick.innerHTML='<option disabled selected>scan failed - retry</option>';}
 }
 modelPick.onchange=async()=>{
