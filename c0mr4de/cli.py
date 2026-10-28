@@ -86,6 +86,21 @@ def main() -> None:
     swarm_p.add_argument("--out-scope", default="")
     swarm_p.add_argument("--focus", default="")
 
+    # --- MCP server + operator approval controls ---
+    mcp_p = sub.add_parser("mcp", help="Run the MCP server (expose verified tools to Claude Desktop/Cursor, gated)")
+    mcp_p.add_argument("--in-scope", default="", help="comma-separated in-scope hosts (active tools fail-closed to these)")
+    mcp_p.add_argument("--out-scope", default="", help="comma-separated hosts to hard-block")
+    mcp_p.add_argument("--focus", default="")
+    mcp_p.add_argument("--auth-host", default="")
+    mcp_p.add_argument("--auth-cookie", default="")
+    mcp_p.add_argument("--auth-header", default="")
+    appr_p = sub.add_parser("mcp-approve", help="Approve a pending active-action request from the MCP server")
+    appr_p.add_argument("id", type=str, help="approval id the server returned")
+    arm_p = sub.add_parser("mcp-arm", help="Allow in-scope active actions without per-action approval for N minutes")
+    arm_p.add_argument("minutes", type=float, nargs="?", default=30)
+    sub.add_parser("mcp-disarm", help="Turn off the armed window (back to per-action approval)")
+    sub.add_parser("mcp-approvals", help="List pending active-action approval requests")
+
     args = parser.parse_args()
 
     # apply operator-provided auth for authenticated testing
@@ -106,6 +121,29 @@ def main() -> None:
             out_of_scope=[s for s in getattr(args, "out_scope", "").split(",") if s.strip()],
             focus=getattr(args, "focus", ""))
         print("[scope] rules of engagement set - out-of-scope hosts will be blocked")
+
+    if args.command == "mcp":
+        from c0mr4de.mcp.server import run
+        run()
+        return
+
+    if args.command in ("mcp-approve", "mcp-arm", "mcp-disarm", "mcp-approvals"):
+        from c0mr4de.mcp import gate
+        if args.command == "mcp-approve":
+            ok, msg = gate.approve(args.id)
+            print(("[approved] " if ok else "[error] ") + msg)
+        elif args.command == "mcp-arm":
+            print("[armed] " + gate.arm(args.minutes))
+        elif args.command == "mcp-disarm":
+            gate.disarm()
+            print("[disarmed] back to per-action approval")
+        else:  # mcp-approvals
+            pend = gate.list_pending()
+            if not pend:
+                print("no pending approvals")
+            for r in pend:
+                print(f"  {r['id']}  {r['tool']}  {r.get('args_preview', {})}")
+        return
 
     if args.command == "swarm":
         from c0mr4de.swarm.orchestrator import Swarm
