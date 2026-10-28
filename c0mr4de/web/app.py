@@ -140,7 +140,11 @@ def chats_rename(chat_id: str, title: str = Body(..., embed=True)):
 
 @app.get("/stats")
 def stats_get():
-    return stats.snapshot()
+    from c0mr4de.tools import cache
+    snap = stats.snapshot()
+    if isinstance(snap, dict):
+        snap["cache"] = cache.stats()      # recon-tool cache hit-rate for the Efficiency panel
+    return snap
 
 
 @app.get("/auth")

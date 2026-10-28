@@ -815,6 +815,13 @@ async function openSettings(){
     ? '<div class="stat hd"><span>model</span><span>calls</span><span>tokens</span><span>avg latency</span></div>'
       + rows.map(r=>`<div class="stat"><span class="n">${esc(r.backend.replace(/openai-compat:|ollama:/g,''))}</span><span class="v">${r.calls}</span><span class="v">${r.total_tokens.toLocaleString()}</span><span class="v">${r.avg_latency}s</span></div>`).join('')
     : '<div class="subnote">No calls yet this session. Run a task to see per-model tokens and latency.</div>';
+  if(st.cache && (st.cache.hits||st.cache.misses)){
+    const c=st.cache;
+    document.getElementById('statsbox').innerHTML +=
+      `<div class="stat" style="margin-top:6px"><span class="n">recon cache</span>`
+      +`<span class="v">${c.hits} hit${c.hits===1?'':'s'}</span><span class="v">${c.entries} cached</span>`
+      +`<span class="v">${Math.round((c.hit_rate||0)*100)}% saved</span></div>`;
+  }
   document.getElementById('toolbox').textContent = `${s.tool_count} tools: ` + s.tools.join(', ');
   renderAuthList(st._authhosts || (await fetch('/auth').then(r=>r.json())).hosts);
   loadScope();

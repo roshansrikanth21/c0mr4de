@@ -2,6 +2,7 @@ import shutil
 import subprocess
 
 from c0mr4de.tools.base import ToolRegistry
+from c0mr4de.tools import cache
 from c0mr4de.tools import (browser, burp, cveintel, email_osint, envcheck, exif, files, fuzz, nuclei, oob, ocr,
                            operator, osint, pd_recon, playbook, poc, recon, recon_stack, report, sourceaudit,
                            surface, teamwork, threatintel, verify, web, webrecon, worklog, writeups)
@@ -27,8 +28,8 @@ def build_default_registry(include_recon: bool | None = None) -> ToolRegistry:
     registry = ToolRegistry()
     for module in (web, webrecon, browser, fuzz, nuclei, pd_recon, oob, burp, osint, email_osint, worklog, files, ocr, operator, recon_stack, playbook, memory_graph, report, surface, sourceaudit, poc, envcheck, writeups, threatintel, cveintel, exif, verify, teamwork):
         for tool in module.TOOLS:
-            registry.register(tool)
+            registry.register(cache.maybe_wrap(tool))   # idempotent recon tools get result-cached
     if include_recon:
         for tool in (*recon.TOOLS, *web.DOCKER_TOOLS):
-            registry.register(tool)
+            registry.register(cache.maybe_wrap(tool))
     return registry

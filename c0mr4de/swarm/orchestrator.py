@@ -86,6 +86,8 @@ class Hivemind:
             return 1
 
     def run(self, target: str, objective: str) -> Blackboard:
+        from c0mr4de.tools import cache
+        cache.clear()   # per-engagement cache: specialists share recon results, no cross-run staleness
         bb = Blackboard(target=target, objective=objective)
         recon, exploit, validate, report = PHASES
         self._phase(recon, bb, objective, target)
