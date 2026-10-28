@@ -120,7 +120,7 @@
   #feed{flex:1;overflow-y:auto;padding:16px 18px 24px}
   #feed .inner{max-width:800px;margin:0 auto}
   @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-  .you,.steps,.dossier,.phase,.error,.note{animation:rise .18s var(--ease)}
+  .you,.steps,.dossier,.phase,.error,.note,.lead{animation:rise .18s var(--ease)}
   @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 
   /* empty state: restrained, clickable example commands */
@@ -185,6 +185,22 @@
   .phase{margin:16px 0 7px;padding:7px 13px;border-left:2px solid var(--accent);background:var(--surface2);border-radius:0 5px 5px 0;
     color:var(--accent);font-family:var(--mono);letter-spacing:.09em;font-size:10.5px;text-transform:uppercase;font-weight:600}
   .phase .sub{color:var(--faint);font-weight:400;letter-spacing:0;text-transform:none;margin-left:9px}
+
+  /* high-value LEAD chip: between a plain step and a confirmed-finding dossier -
+     unverified, so amber (caution) not red, with an explicit verify-first note */
+  .lead{margin:10px 0;border:1px solid var(--line);border-left:2px solid var(--high);border-radius:var(--r);
+    background:var(--surface);overflow:hidden}
+  .lead .lh{display:flex;align-items:center;gap:9px;padding:9px 13px;cursor:pointer;font-family:var(--mono)}
+  .lead .lh:hover{background:var(--surface2)}
+  .lead .ltag{flex:none;padding:2px 8px;border-radius:4px;font-weight:600;font-size:9px;letter-spacing:.06em;
+    background:var(--high-bg);color:var(--high);border:1px solid var(--high-line)}
+  .lead .lttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt);font-size:12px;font-weight:500}
+  .lead .schev{flex:none;color:var(--faint);display:flex;transition:transform .2s var(--ease)}
+  .lead.open .schev{transform:rotate(180deg)}
+  .lead .lb{display:none;padding:4px 14px 10px;border-top:1px solid var(--line-hair);white-space:pre-wrap;
+    word-break:break-word;color:var(--muted);font-size:12px;font-family:var(--mono);line-height:1.55}
+  .lead.open .lb{display:block}
+  .lead .lnote{padding:7px 14px;border-top:1px solid var(--line-hair);color:var(--faint);font-size:10px;font-family:var(--mono)}
 
   .error{margin:11px 0;padding:11px 13px;border:1px solid var(--crit-line);border-left:2px solid var(--crit);border-radius:6px;
     color:#eba9a4;white-space:pre-wrap;background:var(--crit-bg);font-size:12.5px;font-family:var(--mono)}
@@ -702,6 +718,14 @@ function infraToast(text){
   return null;
 }
 
+function leadCard(tag,title,body,note){
+  const el=add('lead',`<div class="lh"><span class="ltag">${esc(tag)}</span><span class="lttl">${esc(title)}</span>`
+    +`<span class="schev">${icon('chevron',13)}</span></div>`
+    +`<div class="lb">${esc(body)}</div>`
+    +`<div class="lnote">${esc(note||'unverified lead - exploit + verify_finding before reporting')}</div>`);
+  el.querySelector('.lh').onclick=()=>el.classList.toggle('open');
+  return el;
+}
 function dossier(label,text){
   const sev=sevOf(text); const cls=sev==='crit'?'crit':sev==='hi'?'hi':'';
   const badge=sev==='crit'?'<span class="sev crit">CRITICAL</span>':sev==='hi'?'<span class="sev hi">HIGH</span>':'<span class="sev find">CAPTURED</span>';
@@ -993,8 +1017,10 @@ function renderEvent(kind,data){
     if(live)setActivity('feeding findings back to recon (round '+data.round+')');
     return;}
   if(kind==='correlate'){flushSteps();
-    const leads=(data.leads||[]).slice(0,3).join(' · ');
-    add('phase',`source&harr;runtime correlation<span class="sub">${data.count} source finding(s) matched to live endpoints${leads?': '+esc(leads):''}</span>`);
+    const shown=(data.leads||[]), more=data.count-shown.length;
+    const body=shown.join('\n\n')+(more>0?`\n\n(+${more} more in shared memory)`:'');
+    leadCard('CORRELATED',`${data.count} source↔runtime match${data.count===1?'':'es'}`,
+      body||'(see shared memory)','source and runtime agree - highest-value leads; exploit + verify first');
     if(live)setActivity('correlating source findings with live endpoints');
     return;}
   if(kind==='thought'){
@@ -1012,6 +1038,14 @@ function renderEvent(kind,data){
       flushSteps();
       dossier('finding · '+data.name, data.result.slice(0,1400));
       setState('COMPROMISED');
+      return;
+    }
+    // actively-exploited CVE matches get a lead chip instead of a buried step
+    if((data.name==='cve_for_surface'||data.name==='cve_lookup') && /exploited/i.test(data.result||'')){
+      flushSteps();
+      const first=(data.result||'').split('\n').find(l=>l.trim())||'CVE leads';
+      leadCard('EXPLOITED CVE', first.slice(0,120), (data.result||'').slice(0,1800),
+        'actively exploited in the wild - verify this target is affected before reporting');
       return;
     }
     maybeInfra(data.result);
