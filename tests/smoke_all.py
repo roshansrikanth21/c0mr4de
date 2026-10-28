@@ -170,6 +170,14 @@ def _stats():
     return "recorded"
 check("workflow", "stats", _stats)
 
+from c0mr4de.tools import cveintel as _cve  # noqa: E402
+def _cveintel():
+    # offline: KEV token-matching + ranking logic (no network); live NVD is exercised separately
+    kev = {"CVE-A": {"vendor": "Apache", "product": "HTTP Server", "name": "traversal", "ransomware": False}}
+    hits = _cve._kev_matches("Apache HTTP Server 2.4.49", kev)
+    return f"kev-match {hits[0]['id']}" if hits else "no match"
+check("recon", "cve intelligence (KEV correlation)", _cveintel)
+
 from c0mr4de.agent.supervisor import Supervisor  # noqa: E402
 from c0mr4de.agent.loop import StepLog  # noqa: E402
 def _sup():
