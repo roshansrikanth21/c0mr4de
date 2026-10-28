@@ -20,6 +20,21 @@
 #   - http://localhost:9000/v1
 #
 # active_model: local-120b
+#
+# `heavy_model:` (optional) names a preset the HIVEMIND uses instead of active_model
+# - the capable brain reserved for heavy engagements, while light single-agent work
+# stays on active_model. Point it at a rotating chain so it never fully stops:
+# heavy_model: heavy-chain
+#   heavy-chain:
+#     type: rotating
+#     chain:
+#       - type: openai_compatible          # capable hosted brain first
+#         model: deepseek-ai/deepseek-v4.1-flash
+#         base_url: https://integrate.api.nvidia.com/v1
+#         api_key: nvapi-...               # free NVIDIA NIM key (build.nvidia.com)
+#       - type: ollama                     # local fallback when NIM rate-limits/credits run out
+#         model: qwen2.5-coder:7b
+#         host: http://localhost:11434
 # models:
 #   local-120b:
 #     type: openai_compatible

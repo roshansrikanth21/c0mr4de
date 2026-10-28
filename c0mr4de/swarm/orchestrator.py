@@ -37,18 +37,24 @@ def _looks_like_finding(text: str) -> bool:
 
 
 def _active_backend_cfg() -> dict:
-    """Resolve the backend the same way the web UI does (runtime.json model switch,
-    then config preset, then the legacy single block) so the hivemind uses the model
-    the operator selected - and so each parallel specialist builds its OWN client."""
+    """Resolve the backend for the HIVEMIND (the heavy path). If the operator set a
+    `heavy_model` preset in config.yaml, use it - that's the capable brain (e.g. a
+    rotating NIM-DeepSeek -> local chain) reserved for real engagements. Otherwise
+    fall back to the same resolution the web UI uses (runtime.json switch, then
+    active_model, then the legacy single block). Each specialist builds its OWN client."""
     repo = Path(__file__).resolve().parent.parent.parent
     cfg = yaml.safe_load((repo / "config" / "config.yaml").read_text())
+    models = cfg.get("models") or {}
+    heavy = cfg.get("heavy_model")
+    if heavy and heavy in models:
+        return models[heavy]
     try:
         st = json.loads((repo / "config" / "runtime.json").read_text())
         if isinstance(st.get("active_backend"), dict):
             return st["active_backend"]
     except Exception:  # noqa: BLE001
         pass
-    name, models = cfg.get("active_model"), cfg.get("models") or {}
+    name = cfg.get("active_model")
     if name and name in models:
         return models[name]
     return cfg["backend"]
