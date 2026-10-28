@@ -182,6 +182,9 @@ class Hivemind:
                 f"--- shared hivemind memory (structured; do not duplicate work) ---\n{bb.brief()}")
         if extra:
             task += f"\n\n{extra}"
+        primer = profile.domain_primer()   # deterministic domain grounding (no embedder, no model decision)
+        if primer:
+            task += f"\n\n{primer}"
         try:
             loop = AgentLoop(backend=self._new_backend(), tools=profile.registry(), max_steps=self.max_steps,
                              verbose=False, on_event=on_ev, should_stop=self.should_stop,

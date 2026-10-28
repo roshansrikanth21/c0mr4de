@@ -11,9 +11,12 @@ there is no cycle where A waits on B while B waits on A.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from c0mr4de.tools import build_default_registry
 from c0mr4de.tools.base import ToolRegistry
+
+_PLAYBOOK_DIR = Path(__file__).resolve().parent.parent.parent / "playbooks"
 
 
 @dataclass
@@ -24,6 +27,7 @@ class AgentProfile:
     tool_names: list[str]
     posts: str = "notes"   # bucket captured outputs land in: surface | leads | confirmed | notes
     phase: str = ""
+    playbooks: list[str] = field(default_factory=list)   # domain knowledge primed at startup
 
     def registry(self) -> ToolRegistry:
         full = build_default_registry()
@@ -34,6 +38,28 @@ class AgentProfile:
                 scoped.register(t)
         return scoped
 
+    def domain_primer(self, per_cap: int = 2800, total_cap: int = 5200) -> str:
+        """Load this specialist's domain playbook(s) straight from disk so it is
+        GROUNDED in its domain every run - no dependence on the model remembering to
+        call consult_knowledge, and no embedder/Ollama needed. consult_knowledge
+        still exists for broader, semantic lookups on top of this baseline."""
+        chunks, used = [], 0
+        for name in self.playbooks:
+            try:
+                text = (_PLAYBOOK_DIR / name).read_text(encoding="utf-8").strip()
+            except Exception:  # noqa: BLE001 - a missing playbook must never break a run
+                continue
+            if len(text) > per_cap:
+                text = text[:per_cap].rsplit("\n", 1)[0] + "\n[...]"
+            if used + len(text) > total_cap:
+                break
+            chunks.append(text)
+            used += len(text)
+        if not chunks:
+            return ""
+        return ("--- your domain playbook (baseline methodology to follow; consult_knowledge for more) ---\n\n"
+                + "\n\n".join(chunks))
+
 
 _CONSULT = ["consult_knowledge", "recall_related"]
 
@@ -41,6 +67,7 @@ _CONSULT = ["consult_knowledge", "recall_related"]
 
 RUNTIME_RECON = AgentProfile(
     name="runtime-recon", domain="recon", posts="surface", phase="recon",
+    playbooks=["web-recon-methodology.md"],
     system=("You are the RUNTIME RECON specialist in a pentest hivemind. Map the live target's attack surface "
             "for the exploitation specialists who run after you: enumerate endpoints/paths/params, fingerprint "
             "the stack, find auth mechanism, tokens/cookies, and admin/non-prod surface. Do NOT exploit - just "
@@ -54,6 +81,7 @@ RUNTIME_RECON = AgentProfile(
 
 CODE_AUDIT = AgentProfile(
     name="code-audit", domain="source audit", posts="surface", phase="recon",
+    playbooks=["source-code-audit-checklist.md"],
     system=("You are the SOURCE-CODE AUDIT specialist in a pentest hivemind, running IN PARALLEL with runtime "
             "recon. If source is available in the workspace, trace user input to dangerous sinks with "
             "audit_source and semgrep_scan, then READ the real functions to confirm the dataflow. Post concrete "
@@ -67,6 +95,7 @@ CODE_AUDIT = AgentProfile(
 
 INJECTION = AgentProfile(
     name="injection", domain="SQLi/command injection", posts="leads", phase="exploit",
+    playbooks=["sqli.md", "command-injection.md"],
     system=("You are the INJECTION specialist (SQLi, command, template, LDAP) in a pentest hivemind. Use the "
             "shared attack surface instead of re-enumerating. Test injectable params, and CONFIRM every hit with "
             "verify_finding (claim=sqli) before claiming it - a response code or an error string alone is not "
@@ -77,6 +106,7 @@ INJECTION = AgentProfile(
 
 CLIENT_SIDE = AgentProfile(
     name="client-side", domain="XSS/SSRF", posts="leads", phase="exploit",
+    playbooks=["xss.md", "ssrf.md"],
     system=("You are the CLIENT-SIDE & SSRF specialist (XSS, SSRF, open redirect) in a pentest hivemind. Use the "
             "shared surface. For XSS, CONFIRM execution with verify_finding (claim=xss) - reflection is not "
             "execution. For SSRF/blind use verify_finding (claim=ssrf) with oob_start. For redirects use "
@@ -87,6 +117,7 @@ CLIENT_SIDE = AgentProfile(
 
 ACCESS_CONTROL = AgentProfile(
     name="access-control", domain="IDOR/BOLA/authz", posts="leads", phase="exploit",
+    playbooks=["idor-access-control.md"],
     system=("You are the ACCESS-CONTROL specialist (IDOR, BOLA, broken authorization) in a pentest hivemind. Use "
             "the shared surface and the operator session. To CONFIRM an IDOR, use verify_finding (claim=idor) with "
             "a control request (the same endpoint with YOUR own id) AND the victim's unique marker - differing "
@@ -96,6 +127,7 @@ ACCESS_CONTROL = AgentProfile(
 
 AUTH = AgentProfile(
     name="auth", domain="auth/session/JWT", posts="leads", phase="exploit",
+    playbooks=["jwt-client-side-bypass.md"],
     system=("You are the AUTHENTICATION & SESSION specialist (JWT, session, token) in a pentest hivemind. Decode "
             "any JWT, and to test whether the server verifies signatures use verify_finding (claim=jwt, field, "
             "value) - it checks that a tampered-payload token is accepted while a corrupted-signature token is "
@@ -108,6 +140,7 @@ AUTH = AgentProfile(
 
 VALIDATOR = AgentProfile(
     name="validator", domain="verification", posts="confirmed", phase="validate",
+    playbooks=["exploit-validation.md"],
     system=("You are the VALIDATION specialist - the 'no proof, no report' gate. Go through the UNVERIFIED leads "
             "on the shared blackboard and, for each concrete one, reproduce it deterministically with "
             "verify_finding (build the request + the matching claim). Keep ONLY the ones it returns CONFIRMED, "
@@ -119,6 +152,7 @@ VALIDATOR = AgentProfile(
 
 REPORTER = AgentProfile(
     name="reporter", domain="reporting", posts="notes", phase="report",
+    playbooks=["report-writing-template.md"],
     system=("You are the REPORTING specialist. Synthesise ONLY the CONFIRMED findings on the shared blackboard "
             "into one professional report. Do not run new scans and do not add unverified leads. Call "
             "write_report once with every confirmed finding - severity, category/CWE, reproduction, PoC, impact, "

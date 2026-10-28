@@ -169,3 +169,38 @@ def test_specialists_run_in_parallel(monkeypatch):
     # total collapses toward ~1.6s (recon .4 + exploit .4 + validate .4 + report .4). Under 2.5s
     # proves the phases genuinely fan out rather than running one specialist at a time.
     assert dt < 2.5
+
+
+def test_every_specialist_is_domain_grounded():
+    """Each specialist must load its own domain playbook deterministically (no
+    embedder, no model decision) - this is the 'specialists grounded in their
+    domain knowledge base' guarantee. A missing/empty primer is a regression."""
+    from c0mr4de.swarm.agents import PHASES
+
+    expect = {
+        "runtime-recon": "recon", "code-audit": "audit",
+        "injection": "SQL Injection", "client-side": "Cross-Site Scripting",
+        "access-control": "Access Control", "auth": "JWT",
+        "validator": "Validation", "reporter": "Report",
+    }
+    seen = set()
+    for group in PHASES:
+        for p in group:
+            seen.add(p.name)
+            assert p.playbooks, f"{p.name} has no domain playbook assigned"
+            primer = p.domain_primer()
+            assert primer and "domain playbook" in primer, f"{p.name} primer empty"
+            if p.name in expect:
+                assert expect[p.name].lower() in primer.lower(), \
+                    f"{p.name} primer missing its domain content ({expect[p.name]})"
+    assert expect.keys() <= seen            # all known specialists are present in the DAG
+
+
+def test_domain_primer_is_bounded_and_safe():
+    from c0mr4de.swarm.agents import INJECTION, AgentProfile
+
+    # bounded: two playbooks stay under the total cap
+    assert len(INJECTION.domain_primer()) <= 5200 + 200
+    # a specialist with no/junk playbooks degrades to empty, never raises
+    assert AgentProfile("x", "d", "s", [], playbooks=[]).domain_primer() == ""
+    assert AgentProfile("x", "d", "s", [], playbooks=["nope-does-not-exist.md"]).domain_primer() == ""
