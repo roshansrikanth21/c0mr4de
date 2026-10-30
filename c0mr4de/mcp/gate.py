@@ -27,7 +27,7 @@ APPROVED_TTL = 300    # once approved, the single-use token is valid for 5 min
 PASSIVE: set[str] = {
     "consult_knowledge", "recall_related", "search_writeups", "fetch_writeup",
     "read_file", "list_workspace", "read_worklog", "worklog", "add_osint_note",
-    "decode_jwt", "make_poc", "cve_lookup", "cve_for_surface",
+    "decode_jwt", "make_poc", "cve_lookup", "cve_for_surface", "payloads",
     "whois_lookup", "crt_sh", "urlscan_search", "virustotal_lookup", "abuseipdb_check",
     "greynoise_check", "otx_indicator", "shodan_host", "google_dork", "username_search",
     "email_osint", "env_report", "attack_surface_report", "render_osint_graph",
