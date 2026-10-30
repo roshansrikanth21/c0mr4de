@@ -102,7 +102,7 @@ INJECTION = AgentProfile(
             "verify_finding (claim=sqli) before claiming it - a response code or an error string alone is not "
             "proof. For blind cases use oob_start/oob_poll. consult_knowledge for the DB/stack. Attach a PoC."),
     tool_names=["http_request", "crawl_site", "test_injection", "test_all_params", "verify_finding",
-                "oob_start", "oob_poll", "make_poc", "note_gap", *_CONSULT],
+                "oob_start", "oob_poll", "make_poc", "note_gap", "payloads", *_CONSULT],
 )
 
 CLIENT_SIDE = AgentProfile(
@@ -113,7 +113,7 @@ CLIENT_SIDE = AgentProfile(
             "execution. For SSRF/blind use verify_finding (claim=ssrf) with oob_start. For redirects use "
             "claim=open_redirect. Never report what you did not confirm. Attach a PoC."),
     tool_names=["http_request", "test_injection", "browser_navigate", "browser_eval", "browser_storage",
-                "oob_start", "oob_poll", "verify_finding", "make_poc", "note_gap", *_CONSULT],
+                "oob_start", "oob_poll", "verify_finding", "make_poc", "note_gap", "payloads", *_CONSULT],
 )
 
 ACCESS_CONTROL = AgentProfile(
@@ -134,7 +134,7 @@ AUTH = AgentProfile(
             "value) - it checks that a tampered-payload token is accepted while a corrupted-signature token is "
             "rejected. Check storage for tokens with browser_storage. Confirm before reporting; attach a PoC."),
     tool_names=["http_request", "decode_jwt", "tamper_jwt", "verify_finding", "browser_storage", "make_poc",
-                *_CONSULT],
+                "payloads", *_CONSULT],
 )
 
 # ---- VALIDATION phase (the "no proof, no report" gate) ----
