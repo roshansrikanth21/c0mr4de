@@ -49,7 +49,13 @@ _STATE = REPO / "config" / "runtime.json"
 
 
 def _read_cfg() -> dict:
-    return yaml.safe_load((REPO / "config" / "config.yaml").read_text())
+    cfg = yaml.safe_load((REPO / "config" / "config.yaml").read_text())
+    try:                                   # make UI-configured provider keys selectable everywhere
+        from c0mr4de import providers
+        cfg = providers.merge_presets(cfg)
+    except Exception:  # noqa: BLE001
+        pass
+    return cfg
 
 
 def _runtime_state() -> dict:
@@ -408,6 +414,26 @@ def system_status(fresh: bool = False):
               "active_model": active, "reachable": reach}
     _sys_cache.update(t=time.time(), data=result)
     return result
+
+
+@app.get("/providers")
+def providers_list(probe: bool = False):
+    """Provider cards for the setup UI: spec + get-key link + whether a key is set
+    (+ optional live reachability probe)."""
+    from c0mr4de import providers
+    return {"providers": providers.status(probe=probe)}
+
+
+@app.post("/providers/key")
+def providers_key(provider: str = Body(..., embed=True), key: str = Body("", embed=True)):
+    """Save (or clear, if key is empty) a provider API key to the gitignored
+    config/providers.json, then test reachability. config.yaml is never touched."""
+    from c0mr4de import providers
+    if provider not in providers.PROVIDERS:
+        return {"error": f"unknown provider '{provider}'"}
+    providers.save_key(provider, key)
+    return {"ok": True, "provider": provider, "configured": bool(key.strip()),
+            "reachable": providers.test_reachable(provider) if key.strip() else None}
 
 
 @app.post("/reveal")

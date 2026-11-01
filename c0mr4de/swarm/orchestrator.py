@@ -44,6 +44,11 @@ def _active_backend_cfg() -> dict:
     active_model, then the legacy single block). Each specialist builds its OWN client."""
     repo = Path(__file__).resolve().parent.parent.parent
     cfg = yaml.safe_load((repo / "config" / "config.yaml").read_text())
+    try:
+        from c0mr4de import providers
+        cfg = providers.merge_presets(cfg)
+    except Exception:  # noqa: BLE001
+        pass
     models = cfg.get("models") or {}
     heavy = cfg.get("heavy_model")
     if heavy and heavy in models:
