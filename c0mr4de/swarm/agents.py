@@ -77,7 +77,7 @@ RUNTIME_RECON = AgentProfile(
     tool_names=["map_attack_surface", "import_scan", "attack_surface_report", "amass_enum", "naabu_scan",
                 "shodan_host", "crawl", "crawl_site", "probe", "fuzz_paths", "fuzz_param", "http_request",
                 "browser_navigate", "browser_storage", "subfinder", "katana_crawl", "gau_urls", "nuclei_scan",
-                "cve_for_surface", "cve_lookup", "env_report", *_CONSULT],
+                "cve_for_surface", "cve_lookup", "search_exploits", "env_report", *_CONSULT],
 )
 
 CODE_AUDIT = AgentProfile(
