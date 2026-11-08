@@ -120,14 +120,17 @@ def prepare(src: Path, out: Path, source_label: str = "writeups",
     by_cat: dict[str, int] = {}
 
     for f in sorted(src.rglob("*")):
-        if not f.is_file() or f.suffix.lower() not in TEXT_EXTS:
-            continue
-        if any(part.lower() in SKIP_DIRS for part in f.relative_to(src).parts):
-            continue
-        if f.name.lower() in SKIP_NAMES:
-            continue
-        scanned += 1
-        raw = f.read_text(encoding="utf-8", errors="replace")
+        try:
+            if not f.is_file() or f.suffix.lower() not in TEXT_EXTS:
+                continue
+            if any(part.lower() in SKIP_DIRS for part in f.relative_to(src).parts):
+                continue
+            if f.name.lower() in SKIP_NAMES:
+                continue
+            scanned += 1
+            raw = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:            # Windows rejects some filenames (Errno 22, long/odd names) -
+            continue               # skip the file; one bad path must never kill the whole ingest
         cleaned = _clean(raw)
         if len(cleaned) < MIN_CHARS:
             skipped_small += 1
