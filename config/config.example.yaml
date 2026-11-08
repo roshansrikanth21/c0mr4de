@@ -21,7 +21,12 @@
 #
 # active_model: local-120b
 #
-# `heavy_model:` (optional) names a preset the HIVEMIND uses instead of active_model
+# `heavy_model: auto` (recommended) auto-builds the HIVEMIND's backend as a rotating
+# chain from every provider you connect in the web UI's "keys" panel (fastest first:
+# Groq -> Cerebras -> Gemini -> ... -> your local model as the never-stops floor).
+# Connect a provider and it joins automatically; no manual chain to maintain.
+#
+# `heavy_model:` can also name a preset the HIVEMIND uses instead of active_model
 # - the capable brain reserved for heavy engagements, while light single-agent work
 # stays on active_model. Point it at a rotating chain so it never fully stops:
 # heavy_model: heavy-chain
