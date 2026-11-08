@@ -126,6 +126,21 @@ def merge_presets(cfg: dict) -> dict:
     return cfg
 
 
+def heavy_chain_cfg(local: dict | None = None) -> dict | None:
+    """Auto-build the hivemind's heavy backend from CONFIGURED providers, fastest
+    first (rank order), with a local model as the never-stops floor. Connect a
+    provider in the UI and it joins this chain automatically. Returns a single
+    backend if only one member, a rotating chain if several, or just `local`/None."""
+    members = [_preset(pid) for pid in sorted(PROVIDERS, key=lambda x: PROVIDERS[x]["rank"]) if key_for(pid)]
+    if local:
+        members.append(local)
+    if not members:
+        return local
+    if len(members) == 1:
+        return members[0]
+    return {"type": "rotating", "chain": members}
+
+
 def masked(key: str) -> str:
     if not key:
         return ""

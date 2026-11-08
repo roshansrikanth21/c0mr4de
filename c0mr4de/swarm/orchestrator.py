@@ -51,6 +51,14 @@ def _active_backend_cfg() -> dict:
         pass
     models = cfg.get("models") or {}
     heavy = cfg.get("heavy_model")
+    if heavy == "auto":                       # auto rotating chain from connected providers + local floor
+        try:
+            from c0mr4de import providers
+            auto = providers.heavy_chain_cfg(local=cfg.get("backend"))
+            if auto:
+                return auto
+        except Exception:  # noqa: BLE001
+            pass
     if heavy and heavy in models:
         return models[heavy]
     try:
