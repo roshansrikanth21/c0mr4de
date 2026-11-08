@@ -350,6 +350,44 @@
   .syscheck .cmd{font-family:var(--mono);font-size:10.5px;color:var(--accent);background:var(--accent-dim);
     padding:2px 7px;border-radius:4px}
 
+  /* ---- providers / API keys setup ---- */
+  #keysPill{display:inline-flex;align-items:center;gap:6px;cursor:pointer;background:transparent;border:none;
+    font-family:var(--mono);font-size:10.5px;color:var(--muted);padding:0 15px;height:16px;transition:color .14s;
+    border-right:1px solid var(--line-hair)}
+  #keysPill:hover{color:var(--txt)}
+  #keysPill .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+  #keysPill.ok .dot{background:var(--ok)}
+  #keysPill .lab{letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
+  #provmodal{width:764px}
+  .provintro{color:var(--faint);font-size:11.5px;line-height:1.6;margin-bottom:14px}
+  .provintro b{color:var(--muted);font-weight:600}
+  .provgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  @media (max-width:640px){.provgrid{grid-template-columns:1fr}}
+  .provcard{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:13px 14px;
+    display:flex;flex-direction:column;gap:9px;position:relative;overflow:hidden;transition:border-color .16s}
+  .provcard:hover{border-color:var(--line2)}
+  .provcard.on{border-color:var(--ok-line)}
+  .provcard.on::before{content:'';position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,var(--ok),transparent)}
+  .provcard .ph{display:flex;align-items:center;gap:9px}
+  .provcard .pdot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none;transition:background .2s}
+  .provcard.on .pdot{background:var(--ok)}
+  .provcard.testing .pdot{background:var(--high);animation:pulse 1s ease-in-out infinite}
+  .provcard .pname{color:var(--txt);font-weight:600;font-size:13.5px}
+  .provcard .prole{margin-left:auto;font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;
+    color:var(--faint);border:1px solid var(--line2);border-radius:20px;padding:2px 9px;white-space:nowrap}
+  .provcard .pblurb{color:var(--faint);font-size:11px;line-height:1.5;min-height:31px}
+  .provcard .prow{display:flex;gap:7px;align-items:center}
+  .provcard input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line2);color:var(--txt);border-radius:var(--r-sm);
+    padding:7px 10px;font-family:var(--mono);font-size:11px;transition:border-color .14s}
+  .provcard input:focus{outline:none;border-color:var(--accent)}
+  .provcard .pfoot{display:flex;align-items:center;gap:10px}
+  .provcard .pget{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--accent);
+    text-decoration:none;transition:opacity .14s}
+  .provcard .pget:hover{opacity:.72} .provcard .pget svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2}
+  .provcard .psave{flex:none;padding:7px 13px;font-size:11px}
+  .provcard .pstat{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint)}
+  .provcard .pstat.ok{color:var(--ok)} .provcard .pstat.bad{color:var(--crit)} .provcard .pstat.testing{color:var(--high)}
+
   /* osint graph overlay */
   #gov{position:fixed;inset:0;background:rgba(10,8,5,.8);z-index:320;display:none}
   #gov.on{display:block;animation:fade .18s var(--ease)}
@@ -395,6 +433,7 @@
       <div class="sb"><span class="lab">state</span><span class="val state" id="st-state">idle</span></div>
       <div class="sb"><span class="lab">tools</span><span class="val" id="st-tools">0</span></div>
       <button id="sysPill" style="margin-left:auto" title="System &amp; setup - what's configured, what's missing, where c0mr4de works"><span class="dot"></span><span class="lab">system</span><span class="val" id="sysPillTxt" style="color:var(--muted);font-weight:500">...</span></button>
+      <button id="keysPill" title="Model providers &amp; API keys - connect a fast/capable brain"><span class="dot"></span><span class="lab">keys</span><span class="val" id="keysPillTxt" style="color:var(--muted);font-weight:500">...</span></button>
       <div class="sb" id="sb-right"><span class="lab">mode</span><span class="val" id="st-mode">agent</span></div>
     </div>
 
@@ -476,6 +515,18 @@
       <div id="sysPaths"></div>
       <h5>Checks <span style="color:var(--faint)">· fix what's red/amber to unlock more capability</span></h5>
       <div id="sysChecks">loading…</div>
+    </div>
+  </div></div>
+
+  <!-- PROVIDERS / API KEYS -->
+  <div id="provov" class="overlay"><div id="provmodal" class="modalbox">
+    <div class="mh"><b>Model providers</b>
+      <span style="color:var(--faint);margin-left:10px;font-size:11px">connect a fast, capable brain · keys stay on your machine</span>
+      <button class="ghost rbtn" id="provRefresh" style="margin-left:auto"><svg class="ic" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> re-test</button>
+      <span class="x" id="provClose" style="margin-left:12px"><svg class="ic" viewBox="0 0 24 24" width="17" height="17"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+    <div class="mb">
+      <div class="provintro">Click <b>Get key ↗</b> to open a provider's key page, paste it back here, and it saves + tests instantly. Keys are written to a gitignored <b>config/providers.json</b> and never leave this machine. Recommended heavy-chain: <b>Groq → Cerebras → Gemini</b> for speed, local as the floor.</div>
+      <div class="provgrid" id="provGrid">loading…</div>
     </div>
   </div></div>
 
@@ -994,6 +1045,65 @@ document.getElementById('sysClose').onclick=()=>sysov.classList.remove('on');
 document.getElementById('sysRefresh').onclick=()=>loadSystem(true,true);
 sysov.onclick=e=>{if(e.target===sysov)sysov.classList.remove('on');};
 
+/* ---- providers / API-key setup panel ---- */
+const provov=document.getElementById('provov'), keysPill=document.getElementById('keysPill');
+const GET_ICON='<svg viewBox="0 0 24 24"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>';
+function paintKeysPill(provs){
+  const n=provs.filter(p=>p.configured).length;
+  keysPill.classList.toggle('ok',n>0);
+  const t=document.getElementById('keysPillTxt');
+  t.textContent = n ? (n+' connected') : 'connect a brain';
+  t.style.color = n ? 'var(--ok)' : 'var(--high)';
+}
+function provCard(p){
+  const el=document.createElement('div'); el.className='provcard'+(p.configured?' on':'');
+  el.dataset.id=p.id;
+  const stat = p.configured
+    ? (p.reachable===true?'<span class="pstat ok">reachable</span>'
+       :p.reachable===false?'<span class="pstat bad">key set · unreachable</span>'
+       :`<span class="pstat ok">${p.from_env?'from env':'key set'}${p.key_masked?' · '+esc(p.key_masked):''}</span>`)
+    : '<span class="pstat">no key</span>';
+  const getlink = p.get_key?`<a class="pget" href="${esc(p.get_key)}" target="_blank" rel="noopener">Get key ${GET_ICON}</a>`:'<span></span>';
+  el.innerHTML=`<div class="ph"><span class="pdot"></span><span class="pname">${esc(p.name)}</span><span class="prole">${esc(p.role)}</span></div>`
+    +`<div class="pblurb">${esc(p.blurb)}</div>`
+    +`<div class="prow"><input type="password" placeholder="paste ${esc(p.id)} API key" autocomplete="off" spellcheck="false"/>`
+    +`<button class="ghost psave">save</button></div>`
+    +`<div class="pfoot">${getlink}${stat}</div>`;
+  const input=el.querySelector('input'), save=el.querySelector('.psave');
+  const doSave=async()=>{
+    const key=input.value.trim(); if(!key){input.focus();return;}
+    el.classList.add('testing'); el.querySelector('.pstat').className='pstat testing'; el.querySelector('.pstat').textContent='testing…';
+    save.disabled=true;
+    const r=await fetch('/providers/key',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({provider:p.id,key})}).then(r=>r.json()).catch(()=>({error:'save failed'}));
+    save.disabled=false; el.classList.remove('testing'); input.value='';
+    if(r.error){toast({level:'err',title:'Save failed',body:esc(r.error)}); return;}
+    toast({title:p.name+' saved',body:r.reachable?'Reachable - ready to use.':r.reachable===false?'Key saved but endpoint did not answer - check the key.':'Saved.'});
+    loadProviders(true); loadModels&&loadModels();   // refresh cards + the model dropdown
+  };
+  save.onclick=doSave; input.addEventListener('keydown',e=>{if(e.key==='Enter')doSave();});
+  return el;
+}
+async function loadProviders(open){
+  if(open){provov.classList.add('on'); document.getElementById('provGrid').innerHTML=skel(4,true);}
+  const d=await fetch('/providers'+(open?'?probe=1':'')).then(r=>r.json()).catch(()=>({providers:[]}));
+  const provs=d.providers||[]; paintKeysPill(provs);
+  if(!open){
+    if(!provs.some(p=>p.configured) && !loadProviders._nudged){
+      loadProviders._nudged=true;
+      toast({title:'Connect a model provider',body:'c0mr4de runs on a local model by default. Add a fast hosted brain (Groq is free) from <b style="color:var(--accent)">keys</b> in the top bar.',ttl:13000,
+        actionLabel:'open providers',onAction:()=>loadProviders(true)});
+    }
+    return;
+  }
+  const grid=document.getElementById('provGrid'); grid.innerHTML='';
+  provs.forEach(p=>grid.appendChild(provCard(p)));
+}
+keysPill.onclick=()=>loadProviders(true);
+document.getElementById('provClose').onclick=()=>provov.classList.remove('on');
+document.getElementById('provRefresh').onclick=()=>loadProviders(true);
+provov.onclick=e=>{if(e.target===provov)provov.classList.remove('on');};
+
 /* render an event */
 let live=false;
 function renderEvent(kind,data){
@@ -1175,6 +1285,7 @@ loadChats();
 loadRoles();
 loadModels();
 loadSystem();
+loadProviders();
 </script>
 </body>
 </html>
