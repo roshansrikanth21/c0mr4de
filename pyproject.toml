@@ -50,3 +50,10 @@ include = ["c0mr4de*"]
 
 [tool.setuptools.package-data]
 "c0mr4de.web" = ["static/*"]
+
+[tool.pytest.ini_options]
+# scope discovery to our own tests - _corpus_src/ holds cloned reference repos
+# (HackTricks, PayloadsAllTheThings, Exploit-DB, ...) for RAG ingest, and some of
+# those carry their own unrelated test_*.py files that pytest would otherwise try
+# (and fail) to collect.
+testpaths = ["tests"]

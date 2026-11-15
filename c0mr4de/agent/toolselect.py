@@ -39,6 +39,8 @@ GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
      ["nuclei_scan", "cve_for_surface", "cve_lookup", "search_exploits", "get_exploit"]),
     (("osint", "email", "username", "person", "people", "handle", "profile", "who is", "behind the email"),
      ["email_osint", "username_search", "google_dork", "add_osint_note", "render_osint_graph"]),
+    (("bug class", "prioriti", "most common", "real-world", "real world", "disclosed", "in the wild", "similar bug", "what to test"),
+     ["top_bug_classes", "bug_class_intel"]),
     (("writeup", "ctf", "challenge", "how others", "reference", "prior art"),
      ["search_writeups", "fetch_writeup"]),
     (("burp", "caido", "proxy history", "har"), ["burp_import"]),

@@ -66,6 +66,12 @@ def main() -> None:
     pl_p.add_argument("--out", type=Path, default=Path("workspace/writeup-corpus/pentesterland"))
     pl_p.add_argument("--ingest", action="store_true", help="Embed the built corpus into the vector store")
 
+    im_p = sub.add_parser("intel-map",
+                          help="Build the Intel Map: a structured, instant-lookup index of real disclosed bugs "
+                               "by vulnerability class (bug_class_intel/top_bug_classes tools)")
+    im_p.add_argument("--out", type=Path, default=Path("workspace/intel-map"))
+    im_p.add_argument("--ingest", action="store_true", help="Also embed a frequency summary into the vector store")
+
     graph_p = sub.add_parser("graph", help="Build + render the memory knowledge graph (relationships across playbooks/vault)")
     graph_p.add_argument("--topic", default="", help="Print graph recall for a topic instead of rendering")
 
@@ -191,6 +197,30 @@ def main() -> None:
             print(f"ingested {n} chunks; store now holds {store.count()} total")
         else:
             print(f"next: c0mr4de ingest --sources {summary['out']}")
+        return
+
+    if args.command == "intel-map":
+        from c0mr4de.memory.intelmap import _compact, build_index, build_summary_doc, write_index
+
+        print("downloading pentester.land/writeups.json ...")
+        from c0mr4de.memory.pentesterland import fetch_list
+        items = _compact(fetch_list())
+        index = build_index(items)
+        path = write_index(index, args.out)
+        print(f"built index: {index['total_items']} writeups across {index['total_classes']} bug classes -> {path}")
+        if args.ingest:
+            from c0mr4de.memory.ingest import ingest_directory
+            from c0mr4de.memory.vectorstore import VectorStore
+
+            summary_dir = args.out / "_summary"
+            summary_dir.mkdir(parents=True, exist_ok=True)
+            (summary_dir / "intel-map-summary.md").write_text(build_summary_doc(index), encoding="utf-8")
+            store = VectorStore()
+            n = ingest_directory(store, summary_dir, "source:intel-map")
+            print(f"ingested {n} chunks; store now holds {store.count()} total")
+        else:
+            print("ready for bug_class_intel()/top_bug_classes() tools. Add --ingest to also embed a "
+                  "frequency summary into consult_knowledge.")
         return
 
     if args.command == "laya-dataset":

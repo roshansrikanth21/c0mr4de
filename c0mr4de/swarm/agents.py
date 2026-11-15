@@ -73,11 +73,14 @@ RUNTIME_RECON = AgentProfile(
             "the stack, find auth mechanism, tokens/cookies, and admin/non-prod surface. Do NOT exploit - just "
             "discover and summarise the surface and which spots look most promising. consult_knowledge for the "
             "stack you find, and cve_for_surface once it's fingerprinted to pull known-exploited CVEs for the "
-            "detected versions (leads for the exploit specialists). Be thorough but fast; issue real tool calls."),
+            "detected versions (leads for the exploit specialists). top_bug_classes/bug_class_intel show what "
+            "real disclosed bugs look like for this kind of surface - use them to prioritise. Be thorough but "
+            "fast; issue real tool calls."),
     tool_names=["map_attack_surface", "import_scan", "attack_surface_report", "amass_enum", "naabu_scan",
                 "shodan_host", "crawl", "crawl_site", "probe", "fuzz_paths", "fuzz_param", "http_request",
                 "browser_navigate", "browser_storage", "subfinder", "katana_crawl", "gau_urls", "nuclei_scan",
-                "cve_for_surface", "cve_lookup", "search_exploits", "env_report", *_CONSULT],
+                "cve_for_surface", "cve_lookup", "search_exploits", "top_bug_classes", "bug_class_intel",
+                "env_report", *_CONSULT],
 )
 
 CODE_AUDIT = AgentProfile(
