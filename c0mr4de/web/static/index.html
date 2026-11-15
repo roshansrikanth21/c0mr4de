@@ -388,6 +388,49 @@
   .provcard .pstat{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint)}
   .provcard .pstat.ok{color:var(--ok)} .provcard .pstat.bad{color:var(--crit)} .provcard .pstat.testing{color:var(--high)}
 
+  /* ---- intel map ---- */
+  #imapmodal{width:900px}
+  .imaphead{display:flex;align-items:baseline;gap:22px;margin-bottom:14px;flex-wrap:wrap}
+  .imapstat{font-family:var(--mono)}
+  .imapstat .n{font-size:20px;font-weight:600;color:var(--accent)}
+  .imapstat .l{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-left:5px}
+  .imapsrc{margin-left:auto;font-size:10.5px;color:var(--faint)}
+  .imapsrc a{color:var(--muted)}
+  #imapSearch{width:100%;background:var(--bg);border:1px solid var(--line2);color:var(--txt);border-radius:var(--r-sm);
+    padding:9px 12px;font-family:var(--mono);font-size:12.5px;margin-bottom:13px;transition:border-color .14s}
+  #imapSearch:focus{outline:none;border-color:var(--accent)}
+  .imapgrid{display:flex;flex-wrap:wrap;gap:7px;max-height:420px;overflow-y:auto;padding-right:2px}
+  .imaptile{border:1px solid var(--line);border-radius:20px;background:var(--surface);color:var(--muted);
+    cursor:pointer;font-family:var(--mono);display:inline-flex;align-items:center;gap:6px;
+    transition:border-color .14s,color .14s,background .14s;white-space:nowrap}
+  .imaptile:hover{border-color:var(--accent);color:var(--txt);background:var(--raised)}
+  .imaptile .c{color:var(--faint);font-size:.85em}
+  .imaptile:hover .c{color:var(--accent)}
+  .imaptile.t1{padding:8px 15px;font-size:14px;font-weight:600;border-color:var(--line2)}
+  .imaptile.t2{padding:7px 13px;font-size:12.5px}
+  .imaptile.t3{padding:6px 11px;font-size:11.5px}
+  .imaptile.t4{padding:5px 10px;font-size:10.5px;color:var(--faint2)}
+  .imapempty{color:var(--faint);font-size:12px;padding:20px 4px;text-align:center}
+  /* detail / drill-down view */
+  .imapback{display:inline-flex;align-items:center;gap:6px;color:var(--muted);cursor:pointer;font-size:11.5px;
+    margin-bottom:12px;transition:color .14s}
+  .imapback:hover{color:var(--accent)}
+  .imapdhead{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap}
+  .imapdhead .dname{font-size:17px;font-weight:600;color:var(--txt)}
+  .imapdhead .dcount{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-dim);
+    padding:2px 9px;border-radius:12px}
+  .imapprogs{color:var(--faint);font-size:11px;margin-bottom:14px;line-height:1.6}
+  .imapprogs b{color:var(--muted);font-weight:500}
+  .imaplist{display:flex;flex-direction:column;gap:2px;max-height:420px;overflow-y:auto}
+  .imapitem{display:block;padding:10px 12px;border-radius:var(--r-sm);text-decoration:none;color:inherit;
+    border:1px solid transparent;transition:background .13s,border-color .13s}
+  .imapitem:hover{background:var(--surface2);border-color:var(--line)}
+  .imapitem .it{color:var(--txt);font-size:12.5px;font-weight:500;margin-bottom:3px}
+  .imapitem .im{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:10.5px;color:var(--faint);
+    font-family:var(--mono)}
+  .imapitem .ip{color:var(--accent);background:var(--accent-dim);padding:1px 7px;border-radius:9px}
+  .imapitem .idt{margin-left:auto}
+
   /* osint graph overlay */
   #gov{position:fixed;inset:0;background:rgba(10,8,5,.8);z-index:320;display:none}
   #gov.on{display:block;animation:fade .18s var(--ease)}
@@ -458,6 +501,7 @@
         <button class="ghost" id="rescanBtn" title="Rescan this device for installed models"><svg class="ic" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         <button class="ghost" id="osintBtn"><svg class="ic" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg> osint graph</button>
         <button class="ghost" id="verifyBtn" title="Deterministically verify a single finding"><svg class="ic" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg> verify</button>
+        <button class="ghost" id="imapBtn" title="Intel Map - real disclosed bugs by class, ranked by frequency"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> intel map</button>
         <div id="drop"><svg class="ic" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> attach a file or screenshot <span class="files"></span></div>
       </div>
       <input type="file" id="picker" multiple hidden />
@@ -527,6 +571,25 @@
     <div class="mb">
       <div class="provintro">Click <b>Get key ↗</b> to open a provider's key page, paste it back here, and it saves + tests instantly. Keys are written to a gitignored <b>config/providers.json</b> and never leave this machine. Recommended heavy-chain: <b>Groq → Cerebras → Gemini</b> for speed, local as the floor.</div>
       <div class="provgrid" id="provGrid">loading…</div>
+    </div>
+  </div></div>
+
+  <!-- INTEL MAP -->
+  <div id="imapov" class="overlay"><div id="imapmodal" class="modalbox">
+    <div class="mh"><b>Intel Map</b>
+      <span style="color:var(--faint);margin-left:10px;font-size:11px">real disclosed bugs, mapped by class</span>
+      <span class="x" id="imapClose" style="margin-left:auto"><svg class="ic" viewBox="0 0 24 24" width="17" height="17"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+    <div class="mb">
+      <div id="imapBrowse">
+        <div class="imaphead">
+          <span class="imapstat"><span class="n" id="imapTotalItems">-</span><span class="l">writeups</span></span>
+          <span class="imapstat"><span class="n" id="imapTotalClasses">-</span><span class="l">bug classes</span></span>
+          <span class="imapsrc">source: <a href="https://pentester.land" target="_blank" rel="noopener">pentester.land</a> (open dataset) · refresh: <code style="color:var(--muted)">c0mr4de intel-map --ingest</code></span>
+        </div>
+        <input id="imapSearch" placeholder="search bug classes, e.g. ssrf, idor, account takeover…" autocomplete="off" />
+        <div class="imapgrid" id="imapGrid">loading…</div>
+      </div>
+      <div id="imapDetail" style="display:none"></div>
     </div>
   </div></div>
 
@@ -1103,6 +1166,61 @@ keysPill.onclick=()=>loadProviders(true);
 document.getElementById('provClose').onclick=()=>provov.classList.remove('on');
 document.getElementById('provRefresh').onclick=()=>loadProviders(true);
 provov.onclick=e=>{if(e.target===provov)provov.classList.remove('on');};
+
+/* ---- intel map: real disclosed bugs by class ---- */
+const imapov=document.getElementById('imapov');
+let imapClasses=[];
+function imapTier(count,max){const r=count/max; return r>0.3?'t1':r>0.08?'t2':r>0.015?'t3':'t4';}
+function renderImapGrid(filter){
+  const grid=document.getElementById('imapGrid');
+  const q=(filter||'').trim().toLowerCase();
+  const list=q?imapClasses.filter(c=>c.name.toLowerCase().includes(q)):imapClasses;
+  if(!list.length){grid.innerHTML='<div class="imapempty">no bug class matches that search</div>';return;}
+  const max=imapClasses[0]?imapClasses[0].count:1;
+  grid.innerHTML=list.map(c=>
+    `<button class="imaptile ${imapTier(c.count,max)}" data-name="${esc(c.name)}">${esc(c.name)} <span class="c">${c.count}</span></button>`
+  ).join('');
+  grid.querySelectorAll('[data-name]').forEach(b=>b.onclick=()=>openImapClass(b.dataset.name));
+}
+async function loadImapStats(){
+  document.getElementById('imapGrid').innerHTML='loading…';
+  const d=await fetch('/intel-map/stats').then(r=>r.json()).catch(()=>({error:'fetch failed'}));
+  if(d.error){
+    document.getElementById('imapGrid').innerHTML=
+      `<div class="imapempty">Intel Map not built yet.<br>Run <code style="color:var(--accent)">${esc(d.todo||'c0mr4de intel-map --ingest')}</code>, then reopen this.</div>`;
+    return;
+  }
+  imapClasses=d.classes;
+  document.getElementById('imapTotalItems').textContent=d.total_items.toLocaleString();
+  document.getElementById('imapTotalClasses').textContent=d.total_classes.toLocaleString();
+  renderImapGrid('');
+}
+async function openImapClass(name){
+  document.getElementById('imapBrowse').style.display='none';
+  const detail=document.getElementById('imapDetail');
+  detail.style.display='block';
+  detail.innerHTML='<div class="imapback" id="imapBack">&larr; all bug classes</div><div class="imapempty">loading…</div>';
+  document.getElementById('imapBack').onclick=()=>{detail.style.display='none';document.getElementById('imapBrowse').style.display='block';};
+  const d=await fetch('/intel-map/class?name='+encodeURIComponent(name)+'&limit=40').then(r=>r.json()).catch(()=>({error:'fetch failed'}));
+  if(d.error){detail.innerHTML='<div class="imapback" id="imapBack2">&larr; all bug classes</div><div class="imapempty">'+esc(d.error)+'</div>';
+    document.getElementById('imapBack2').onclick=()=>{detail.style.display='none';document.getElementById('imapBrowse').style.display='block';};return;}
+  const progs=d.top_programs.map(p=>`<b>${esc(p.name)}</b> (${p.count})`).join(', ');
+  const items=d.items.map(it=>
+    `<a class="imapitem" href="${esc(it.l)}" target="_blank" rel="noopener">`
+    +`<div class="it">${esc(it.t)}</div>`
+    +`<div class="im">${(it.p||[]).map(p=>`<span class="ip">${esc(p)}</span>`).join('')}`
+    +`<span>${esc(it.a||'')}</span><span class="idt">${esc(it.d||'')}</span></div></a>`
+  ).join('');
+  detail.innerHTML=`<div class="imapback" id="imapBack">&larr; all bug classes</div>`
+    +`<div class="imapdhead"><span class="dname">${esc(d.name)}</span><span class="dcount">${d.count} disclosed</span></div>`
+    +(progs?`<div class="imapprogs">most seen on: ${progs}</div>`:'')
+    +`<div class="imaplist">${items||'<div class="imapempty">no writeups found</div>'}</div>`;
+  document.getElementById('imapBack').onclick=()=>{detail.style.display='none';document.getElementById('imapBrowse').style.display='block';};
+}
+document.getElementById('imapBtn').onclick=()=>{toggleSide&&toggleSide(false);imapov.classList.add('on');if(!imapClasses.length)loadImapStats();};
+document.getElementById('imapClose').onclick=()=>imapov.classList.remove('on');
+imapov.onclick=e=>{if(e.target===imapov)imapov.classList.remove('on');};
+document.getElementById('imapSearch').addEventListener('input',e=>renderImapGrid(e.target.value));
 
 /* render an event */
 let live=false;

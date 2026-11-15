@@ -436,6 +436,26 @@ def providers_key(provider: str = Body(..., embed=True), key: str = Body("", emb
             "reachable": providers.test_reachable(provider) if key.strip() else None}
 
 
+@app.get("/intel-map/stats")
+def intel_map_stats():
+    """Full class list (name+count, small) for the Intel Map panel's browse/search grid."""
+    from c0mr4de.tools import intelmap
+    data = intelmap.stats()
+    if data is None:
+        return {"error": "not built", "todo": "c0mr4de intel-map --ingest"}
+    return data
+
+
+@app.get("/intel-map/class")
+def intel_map_class(name: str, limit: int = 30):
+    """Real disclosed writeups for one bug class - the Intel Map's drill-down view."""
+    from c0mr4de.tools import intelmap
+    detail = intelmap.class_detail(name, limit=limit)
+    if detail is None:
+        return {"error": f"no match for '{name}'"}
+    return detail
+
+
 @app.post("/reveal")
 def reveal(path: str = Body(..., embed=True)):
     """Open a c0mr4de-produced file or folder in the OS file explorer. Scoped to the

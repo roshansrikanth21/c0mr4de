@@ -57,6 +57,37 @@ def _match_class(idx: dict, query: str) -> str | None:
     return max(hits, key=lambda c: classes[c]["count"])
 
 
+def available() -> bool:
+    return _load() is not None
+
+
+def stats() -> dict | None:
+    """Raw {total_items, total_classes, classes:[{name,count}]} for the web UI -
+    the full class list (small: name+count) so the UI can search/sort client side."""
+    idx = _load()
+    if idx is None:
+        return None
+    classes = sorted(({"name": n, "count": s["count"]} for n, s in idx["classes"].items()),
+                      key=lambda c: -c["count"])
+    return {"total_items": idx["total_items"], "total_classes": idx["total_classes"], "classes": classes}
+
+
+def class_detail(bug_class: str, limit: int = 30) -> dict | None:
+    """Raw detail for one class - {name, count, top_programs, items:[...]} - for the
+    web UI's drill-down view. None if the class doesn't match anything."""
+    idx = _load()
+    if idx is None:
+        return None
+    name = _match_class(idx, bug_class)
+    if not name:
+        return None
+    stat = idx["classes"][name]
+    items = sorted((it for it in idx["items"] if name in it["b"]), key=lambda it: it.get("d", ""), reverse=True)
+    return {"name": name, "count": stat["count"],
+            "top_programs": [{"name": p, "count": n} for p, n in stat["top_programs"]],
+            "items": items[:limit]}
+
+
 def bug_class_intel(bug_class: str, limit: int = 8) -> str:
     """Real, disclosed bug-bounty writeups for a vulnerability class (e.g. 'IDOR',
     'SSRF', 'account takeover', 'SQL injection') - shows how that class is actually
