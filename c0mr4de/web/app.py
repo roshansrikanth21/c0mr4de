@@ -456,6 +456,27 @@ def intel_map_class(name: str, limit: int = 30):
     return detail
 
 
+@app.get("/plugin-mode/status")
+def plugin_mode_status(in_scope: str = "", out_scope: str = "", focus: str = ""):
+    """Everything the Plugin Mode panel needs: tool count, current scope/arm
+    state, and per-target (Claude Desktop/Code, OpenCode) config detection +
+    paste-ready snippets. Never echoes an existing third-party config's content
+    (see pluginmode.describe's docstring) - only whether it's there."""
+    from c0mr4de import pluginmode
+    return pluginmode.status(in_scope, out_scope, focus)
+
+
+@app.post("/plugin-mode/write")
+def plugin_mode_write(target: str = Body(..., embed=True), in_scope: str = Body("", embed=True),
+                       out_scope: str = Body("", embed=True), focus: str = Body("", embed=True)):
+    """Merge the c0mr4de MCP entry into TARGET's real config file (backs up the
+    original first; never touches any other key in that file)."""
+    from c0mr4de import pluginmode
+    if target not in pluginmode.TARGETS:
+        return {"error": f"unknown target '{target}'"}
+    return pluginmode.write_config(target, in_scope, out_scope, focus)
+
+
 @app.post("/reveal")
 def reveal(path: str = Body(..., embed=True)):
     """Open a c0mr4de-produced file or folder in the OS file explorer. Scoped to the

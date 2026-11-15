@@ -431,6 +431,44 @@
   .imapitem .ip{color:var(--accent);background:var(--accent-dim);padding:1px 7px;border-radius:9px}
   .imapitem .idt{margin-left:auto}
 
+  /* ---- plugin mode: connect Claude / Claude Code / OpenCode over MCP ---- */
+  #pluginPill{display:inline-flex;align-items:center;gap:6px;cursor:pointer;background:transparent;border:none;
+    font-family:var(--mono);font-size:10.5px;color:var(--muted);padding:0 15px;height:16px;transition:color .14s;
+    border-right:1px solid var(--line-hair)}
+  #pluginPill:hover{color:var(--txt)}
+  #pluginPill .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+  #pluginPill.ok .dot{background:var(--ok)}
+  #pluginPill .lab{letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
+  #pluginmodal{width:760px}
+  .pluginintro{color:var(--faint);font-size:11.5px;line-height:1.6;margin-bottom:8px}
+  .pluginintro b{color:var(--muted);font-weight:600}
+  .pluginscope{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);
+    background:var(--surface2);border:1px solid var(--line);border-radius:var(--r-sm);padding:9px 12px;margin-bottom:16px}
+  .pluginscope .psl{color:var(--faint)}
+  .pluginscope .psv{color:var(--ok)} .pluginscope .psv.warn{color:var(--high)}
+  .plugincard{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:14px 16px;
+    margin-bottom:11px;display:flex;flex-direction:column;gap:10px}
+  .plugincard .pgh{display:flex;align-items:center;gap:9px}
+  .plugincard .pgdot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+  .plugincard.on .pgdot{background:var(--ok)}
+  .plugincard .pgname{color:var(--txt);font-weight:600;font-size:13.5px}
+  .plugincard .pgbadge{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 8px;border-radius:10px;background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-line)}
+  .plugincard .pgdocs{margin-left:auto;font-size:10.5px;color:var(--faint);text-decoration:none}
+  .plugincard .pgdocs:hover{color:var(--accent)}
+  .plugincard .pgblurb{color:var(--faint);font-size:11.5px;line-height:1.5}
+  .plugincard .pgpath{font-family:var(--mono);font-size:10.5px;color:var(--muted);word-break:break-all}
+  .plugincard .pgnote{font-size:10.5px;color:var(--high);line-height:1.5}
+  .plugincard pre{background:var(--bg);border:1px solid var(--line-hair);border-radius:var(--r-sm);padding:10px 12px;
+    font-family:var(--mono);font-size:10.5px;color:var(--txt);margin:0;max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+  .plugincard .pgcli{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;
+    background:var(--bg);border:1px solid var(--line-hair);border-radius:var(--r-sm);padding:7px 10px;color:var(--muted);
+    overflow-x:auto;white-space:nowrap}
+  .plugincard .pgrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .plugincard .pgrow .ghost{font-size:11px;padding:6px 12px}
+  .plugincard .pgwrite{border-color:var(--accent-dim);color:var(--accent)}
+  .plugincard .pgwrite:hover{background:var(--accent-dim)}
+
   /* osint graph overlay */
   #gov{position:fixed;inset:0;background:rgba(10,8,5,.8);z-index:320;display:none}
   #gov.on{display:block;animation:fade .18s var(--ease)}
@@ -477,6 +515,7 @@
       <div class="sb"><span class="lab">tools</span><span class="val" id="st-tools">0</span></div>
       <button id="sysPill" style="margin-left:auto" title="System &amp; setup - what's configured, what's missing, where c0mr4de works"><span class="dot"></span><span class="lab">system</span><span class="val" id="sysPillTxt" style="color:var(--muted);font-weight:500">...</span></button>
       <button id="keysPill" title="Model providers &amp; API keys - connect a fast/capable brain"><span class="dot"></span><span class="lab">keys</span><span class="val" id="keysPillTxt" style="color:var(--muted);font-weight:500">...</span></button>
+      <button id="pluginPill" title="Plugin Mode - give Claude, Claude Code or OpenCode direct access to c0mr4de's tools"><span class="dot"></span><span class="lab">plugin</span><span class="val" id="pluginPillTxt" style="color:var(--muted);font-weight:500">...</span></button>
       <div class="sb" id="sb-right"><span class="lab">mode</span><span class="val" id="st-mode">agent</span></div>
     </div>
 
@@ -590,6 +629,19 @@
         <div class="imapgrid" id="imapGrid">loading…</div>
       </div>
       <div id="imapDetail" style="display:none"></div>
+    </div>
+  </div></div>
+
+  <!-- PLUGIN MODE -->
+  <div id="pluginov" class="overlay"><div id="pluginmodal" class="modalbox">
+    <div class="mh"><b>Plugin Mode</b>
+      <span style="color:var(--faint);margin-left:10px;font-size:11px">use c0mr4de's tools + RAG + Intel Map from Claude, Claude Code, or OpenCode</span>
+      <button class="ghost rbtn" id="pluginRefresh" style="margin-left:auto"><svg class="ic" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> recheck</button>
+      <span class="x" id="pluginClose" style="margin-left:12px"><svg class="ic" viewBox="0 0 24 24" width="17" height="17"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+    <div class="mb">
+      <div class="pluginintro">c0mr4de already runs an MCP server (<code style="color:var(--muted)">c0mr4de mcp</code>) exposing all its tools - connect any of these clients and it can use c0mr4de's recon, CVE-intel, Intel Map and knowledge base directly, with the same scope + approval gates as everywhere else in c0mr4de.</div>
+      <div class="pluginscope" id="pluginScope">loading scope…</div>
+      <div id="pluginCards">loading…</div>
     </div>
   </div></div>
 
@@ -1222,6 +1274,63 @@ document.getElementById('imapClose').onclick=()=>imapov.classList.remove('on');
 imapov.onclick=e=>{if(e.target===imapov)imapov.classList.remove('on');};
 document.getElementById('imapSearch').addEventListener('input',e=>renderImapGrid(e.target.value));
 
+/* ---- plugin mode: connect Claude / Claude Code / OpenCode over MCP ---- */
+const pluginov=document.getElementById('pluginov'), pluginPill=document.getElementById('pluginPill');
+function pluginCopyBtn(text,label){const b=document.createElement('button');b.className='ghost';b.textContent=label||'copy';
+  b.onclick=()=>{navigator.clipboard.writeText(text).then(()=>{b.textContent='copied';setTimeout(()=>b.textContent=label||'copy',1200);});};return b;}
+function pluginCard(t){
+  const el=document.createElement('div'); el.className='plugincard'+(t.already_wired?' on':'');
+  const badge=t.already_wired?'<span class="pgbadge">connected</span>':t.exists?'<span class="pgbadge" style="background:var(--high-bg);color:var(--high);border-color:var(--high-line)">config found</span>':'<span class="pgbadge" style="background:var(--raised);color:var(--faint);border-color:var(--line2)">not set up</span>';
+  el.innerHTML=`<div class="pgh"><span class="pgdot"></span><span class="pgname">${esc(t.name)}</span>${badge}`
+    +`<a class="pgdocs" href="${esc(t.docs)}" target="_blank" rel="noopener">docs ↗</a></div>`
+    +`<div class="pgblurb">${esc(t.blurb)}</div>`
+    +`<div class="pgpath">${esc(t.config_path||'')}${t.exists?' · existing file - other entries are preserved':''}</div>`
+    +(t.note?`<div class="pgnote">${esc(t.note)}</div>`:'')
+    +(t.full_file_preview?`<pre>${esc(t.full_file_preview)}</pre>`:`<pre>${esc(t.entry_snippet)}</pre>`)
+    +`<div class="pgrow" id="pgrow-${esc(t.id)}"></div>`;
+  const row=el.querySelector('#pgrow-'+t.id);
+  row.appendChild(pluginCopyBtn(t.full_file_preview||t.entry_snippet, t.exists?'copy entry to merge':'copy config'));
+  if(t.cli_hint){const cb=pluginCopyBtn(t.cli_hint,'copy CLI command');cb.title=t.cli_hint;row.appendChild(cb);}
+  const wb=document.createElement('button'); wb.className='ghost pgwrite'; wb.textContent=t.already_wired?'re-write for me':'write for me';
+  wb.onclick=async()=>{
+    wb.disabled=true; wb.textContent='writing…';
+    const r=await fetch('/plugin-mode/write',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({target:t.id,in_scope:document.getElementById('scIn')?document.getElementById('scIn').value:'',
+        out_scope:document.getElementById('scOut')?document.getElementById('scOut').value:'',
+        focus:document.getElementById('scFocus')?document.getElementById('scFocus').value:''})}).then(r=>r.json()).catch(()=>({error:'write failed'}));
+    wb.disabled=false; wb.textContent=t.already_wired?'re-write for me':'write for me';
+    if(r.error){toast({level:'err',title:'Could not write '+t.name+' config',body:esc(r.error)});return;}
+    toast({title:t.name+' connected',body:'Wrote '+esc(r.path)+(r.backup?' (backed up the original first)':'')+'. Restart '+esc(t.name)+' to pick it up.'});
+    loadPluginMode(true);
+  };
+  row.appendChild(wb);
+  return el;
+}
+function paintPluginPill(d){
+  const n=(d.targets||[]).filter(t=>t.already_wired).length;
+  pluginPill.classList.toggle('ok',n>0);
+  const txt=document.getElementById('pluginPillTxt');
+  txt.textContent=n?n+' connected':d.tool_count+' tools ready';
+  txt.style.color=n?'var(--ok)':'var(--muted)';
+}
+async function loadPluginMode(open){
+  if(open){pluginov.classList.add('on');document.getElementById('pluginCards').innerHTML='loading…';}
+  const d=await fetch('/plugin-mode/status').then(r=>r.json()).catch(()=>null);
+  if(!d){if(open)document.getElementById('pluginCards').innerHTML='<div class="imapempty">could not load plugin status</div>';return;}
+  paintPluginPill(d);
+  if(!open)return;
+  const sc=document.getElementById('pluginScope');
+  sc.innerHTML=`<span class="psl">scope</span><span class="${d.scope_brief?'psv':'psv warn'}">${esc(d.scope_brief||'not set - active tools stay blocked over MCP too')}</span>`
+    +`<span class="psl" style="margin-left:14px">approval</span><span class="psv${d.armed?'':' warn'}">${d.armed?'armed (auto-runs in-scope actions)':'per-action approval'}</span>`
+    +(d.pending_approvals?`<span class="psl" style="margin-left:14px">pending</span><span class="psv warn">${d.pending_approvals}</span>`:'');
+  const box=document.getElementById('pluginCards'); box.innerHTML='';
+  (d.targets||[]).forEach(t=>box.appendChild(pluginCard(t)));
+}
+pluginPill.onclick=()=>loadPluginMode(true);
+document.getElementById('pluginClose').onclick=()=>pluginov.classList.remove('on');
+document.getElementById('pluginRefresh').onclick=()=>loadPluginMode(true);
+pluginov.onclick=e=>{if(e.target===pluginov)pluginov.classList.remove('on');};
+
 /* render an event */
 let live=false;
 function renderEvent(kind,data){
@@ -1404,6 +1513,7 @@ loadRoles();
 loadModels();
 loadSystem();
 loadProviders();
+loadPluginMode();
 </script>
 </body>
 </html>
